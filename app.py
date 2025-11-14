@@ -1,21 +1,22 @@
 import streamlit as st
 import gspread
 import pandas as pd
-import numpy as np # Asegúrate de que numpy esté importado
+import numpy as np 
 
 # -------------------------------------------------------------------
 # 1. AUTENTICACIÓN Y ACCESO A GOOGLE SHEETS
 # -------------------------------------------------------------------
 
-@st.cache_data(ttl=600) # Cachea los datos por 10 minutos (600 seg)
+@st.cache_data(ttl=600) 
 def cargar_datos():
     try:
         creds_dict = st.secrets["google_credentials"]
         gc = gspread.service_account_from_dict(creds_dict)
         
         # -----------------
-        NOMBRE_SHEET = "Resultados_Planta" 
-        NOMBRE_PESTAÑA = "Hoja 1" 
+        # ! REEMPLAZA ESTOS VALORES !
+        NOMBRE_SHEET = "MIEjemplo" # <- ASEGÚRATE DE QUE SEA TU NOMBRE REAL
+        NOMBRE_PESTAÑA = "Sheet1" # <- Y ESTE EL DE TU PESTAÑA
         # -----------------
 
         spreadsheet = gc.open(NOMBRE_SHEET)
@@ -47,12 +48,12 @@ def cargar_datos():
 
         if 'timestamp' in df.columns:
             df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-            df.set_index('timestamp', inplace=True) 
+            df.set_index('timestamp', inplace=True)
+            df.sort_index(inplace=True) # Asegurarse de que esté ordenado por tiempo
         else:
             st.error("Error crítico: No se encontró la columna 'timestamp'.")
             return pd.DataFrame(), False
 
-        # Eliminar filas donde cualquier conversión a número o fecha falló
         df.dropna(inplace=True)
         
         return df, True
@@ -78,7 +79,6 @@ if data_loaded_successfully and not df.empty:
     # -------------------------------------------------
     st.sidebar.header("Filtros de Análisis")
     
-    # Filtro de Rango de Fechas (usa el índice que creamos)
     min_date = df.index.min().date()
     max_date = df.index.max().date()
     
@@ -92,242 +92,182 @@ if data_loaded_successfully and not df.empty:
     start_date = pd.to_datetime(date_range[0])
     end_date = pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
 
-    # --- NUEVOS INPUTS EN SIDEBAR ---
+    # --- INPUTS DE CÁLCULO EN SIDEBAR ---
     st.sidebar.header("Límites de Especificación (Cpk)")
-    # ! CAMBIA ESTOS VALORES POR DEFECTO !
-    usl = st.sidebar.number_input("Acidez - Límite Superior (USL)", value=0.04)
-    lsl = st.sidebar.number_input("Acidez - Límite Inferior (LSL)", value=0.015)
+    usl = st.sidebar.number_input("Acidez - Límite Superior (USL)", value=0.15)
+    lsl = st.sidebar.number_input("Acidez - Límite Inferior (LSL)", value=0.05)
 
     st.sidebar.header("Costos de Insumos")
-    costo_soda = st.sidebar.number_input("Costo Soda ($/L)", value=0.5, format="%.2f")
+    # --- CAMBIOS AQUÍ ---
+    costo_soda_kg = st.sidebar.number_input("Costo Soda ($/kg)", value=0.75, format="%.2f")
+    densidad_soda = st.sidebar.number_input("Densidad Soda (kg/L)", value=1.52, format="%.2f")
     costo_agua = st.sidebar.number_input("Costo Agua ($/L)", value=0.1, format="%.2f")
-    # --- FIN DE NUEVOS INPUTS ---
+    # --- FIN DE CAMBIOS ---
 
 
     # Aplicar filtros al DataFrame
     df_filtrado = df[
         (df.index >= start_date) & 
         (df.index <= end_date)
-    ]
+    ].copy() # Usamos .copy() para evitar warnings de pandas
     
     if df_filtrado.empty:
         st.warning("No hay datos para el rango de fechas seleccionado.")
     else:
+        
+        # --- CÁLCULOS PRELIMINARES DE COSTO ---
+        # Convertir costo de $/kg a $/L usando la densidad
+        costo_soda_litro = costo_soda_kg * densidad_soda
+        
+        # Calcular los costos POR HORA (para el gráfico de línea)
+        df_filtrado['Costo_Real_Hora'] = (df_filtrado['caudal_naoh_in'] * costo_soda_litro) + \
+                                         (df_filtrado['caudal_agua_in'] * costo_agua)
+        
+        df_filtrado['Costo_Optimo_Hora'] = (df_filtrado['opt_caudal_naoh_Lh'] * costo_soda_litro) + \
+                                          (df_filtrado['opt_caudal_agua_Lh'] * costo_agua)
+
+        # --- NUEVO CÁLCULO DE COSTO TOTAL PRECISO ---
+        # 1. Calcular el delta de tiempo (duración de la fila) en horas
+        #    diff() calcula la diferencia con la fila anterior.
+        #    .dt.total_seconds() / 3600 lo convierte a horas
+        df_filtrado['duracion_horas'] = df_filtrado.index.to_series().diff().dt.total_seconds() / 3600
+        
+        # 2. Rellenar el primer valor (que será NaN) con el promedio de duración
+        #    Esto es una buena aproximación para la primera medición
+        promedio_duracion = df_filtrado['duracion_horas'].mean()
+        df_filtrado['duracion_horas'].fillna(promedio_duracion, inplace=True)
+        
+        # 3. Calcular el costo real de esa medición (Costo/Hora * Horas)
+        df_filtrado['Costo_Real_Medicion'] = df_filtrado['Costo_Real_Hora'] * df_filtrado['duracion_horas']
+        df_filtrado['Costo_Optimo_Medicion'] = df_filtrado['Costo_Optimo_Hora'] * df_filtrado['duracion_horas']
+
+        # 4. Calcular los totales sumando los costos de cada medición
+        costo_total_real = df_filtrado['Costo_Real_Medicion'].sum()
+        costo_total_optimo = df_filtrado['Costo_Optimo_Medicion'].sum()
+        ahorro_potencial = costo_total_real - costo_total_optimo
+        # --- FIN DE CÁLCULO PRECISO ---
+
+
         # -------------------------------------------------
         # SECCIÓN 1: ANÁLISIS DE ERROR - DOSIFICACIÓN DE SODA
+        # ... (Esta sección no cambia) ...
         # -------------------------------------------------
         st.header("1. Análisis de Error: Dosificación de Soda (Óptima vs. Real)")
-        
         df_filtrado['Error_Dosificacion_Soda'] = df_filtrado['caudal_naoh_in'] - df_filtrado['opt_caudal_naoh_Lh']
-        
         col1, col2, col3 = st.columns(3)
         mae_soda = np.mean(np.abs(df_filtrado['Error_Dosificacion_Soda']))
         col1.metric("Error Absoluto Medio (MAE)", f"{mae_soda:.2f} L/h")
-        
         bias_soda = np.mean(df_filtrado['Error_Dosificacion_Soda'])
-        col2.metric("Error Medio (Bias)", f"{bias_soda:.2f} L/h", 
-                     help="Positivo = La dosificación REAL de soda fue MAYOR que la óptima. Negativo = La dosificación REAL fue MENOR.")
-        
+        col2.metric("Error Medio (Bias)", f"{bias_soda:.2f} L/h", help="Positivo = La dosificación REAL de soda fue MAYOR que la óptima. Negativo = La dosificación REAL fue MENOR.")
         col3.metric("N° de Muestras", f"{len(df_filtrado)}")
-        
-        st.subheader("Seguimiento Temporal - Dosificación de Soda")
-        st.line_chart(
-            df_filtrado, 
-            y=['caudal_naoh_in', 'opt_caudal_naoh_Lh']
-        )
-        
-        st.subheader("Correlación - Dosificación de Soda (Óptima vs. Real)")
-        st.scatter_chart(
-            df_filtrado,
-            x='opt_caudal_naoh_Lh', 
-            y='caudal_naoh_in'      
-        )
+        st.line_chart(df_filtrado, y=['caudal_naoh_in', 'opt_caudal_naoh_Lh'])
+        st.scatter_chart(df_filtrado, x='opt_caudal_naoh_Lh', y='caudal_naoh_in')
+
 
         # -------------------------------------------------
         # SECCIÓN 1.1: ANÁLISIS DE ERROR - DOSIFICACIÓN DE AGUA
+        # ... (Esta sección no cambia) ...
         # -------------------------------------------------
         st.header("1.1. Análisis de Error: Dosificación de Agua (Óptima vs. Real)")
-        
         df_filtrado['Error_Dosificacion_Agua'] = df_filtrado['caudal_agua_in'] - df_filtrado['opt_caudal_agua_Lh']
-        
         col1_agua, col2_agua, col3_agua = st.columns(3)
         mae_agua = np.mean(np.abs(df_filtrado['Error_Dosificacion_Agua']))
         col1_agua.metric("Error Absoluto Medio (MAE)", f"{mae_agua:.2f} L/h")
-        
         bias_agua = np.mean(df_filtrado['Error_Dosificacion_Agua'])
-        col2_agua.metric("Error Medio (Bias)", f"{bias_agua:.2f} L/h", 
-                     help="Positivo = La dosificación REAL de agua fue MAYOR que la óptima. Negativo = La dosificación REAL fue MENOR.")
-        
-        col3_agua.metric("N° de Muestras", f"{len(df_filtrado)}")
-        
-        st.subheader("Seguimiento Temporal - Dosificación de Agua")
-        st.line_chart(
-            df_filtrado, 
-            y=['caudal_agua_in', 'opt_caudal_agua_Lh']
-        )
-        
-        st.subheader("Correlación - Dosificación de Agua (Óptima vs. Real)")
-        st.scatter_chart(
-            df_filtrado,
-            x='opt_caudal_agua_Lh', 
-            y='caudal_agua_in'      
-        )
+        col2_agua.metric("Error Medio (Bias)", f"{bias_agua:.2f} L/h", help="Positivo = La dosificación REAL de agua fue MAYOR que la óptima. Negativo = La dosificación REAL fue MENOR.")
+        st.line_chart(df_filtrado, y=['caudal_agua_in', 'opt_caudal_agua_Lh'])
+        st.scatter_chart(df_filtrado, x='opt_caudal_agua_Lh', y='caudal_agua_in')
 
 
         # -------------------------------------------------
         # SECCIÓN 2: VARIABLES DE PROCESO (ENTRADA)
+        # ... (Esta sección no cambia) ...
         # -------------------------------------------------
         st.header("2. Variables de Proceso (Entrada)")
-        
-        st.subheader("Seguimiento de Acidez (FFA) vs. Caudal de Aceite")
-        st.line_chart(
-            df_filtrado,
-            y=['ffa_pct_in', 'caudal_aceite_in']
-        )
-        
-        st.subheader("Correlación Acidez (FFA) vs. Caudal de Aceite")
-        st.scatter_chart(
-            df_filtrado,
-            x='caudal_aceite_in',
-            y='ffa_pct_in'
-        )
+        st.line_chart(df_filtrado, y=['ffa_pct_in', 'caudal_aceite_in'])
+        st.scatter_chart(df_filtrado, x='caudal_aceite_in', y='ffa_pct_in')
+
 
         # -------------------------------------------------
         # SECCIÓN 3: ANÁLISIS DE RESULTADOS (SIMULADOS)
+        # ... (Esta sección no cambia) ...
         # -------------------------------------------------
         st.header("3. Resultados Simulados por el Modelo")
         
-        # Gráfico de Acidez Final Simulada
         st.subheader("Acidez Final Simulada (%FFA)")
-        st.line_chart(
-            df_filtrado,
-            y='sim_acidez_final_pct'
-        )
-        
-        # Guardar la serie de datos de acidez para usarla en SPC y Cpk
+        st.line_chart(df_filtrado, y='sim_acidez_final_pct')
         acidez_data = df_filtrado['sim_acidez_final_pct'].dropna()
-
-        # Histograma de Acidez Final Simulada
         st.subheader("Distribución de Acidez Final Simulada")
         hist_values_acidez, bin_edges_acidez = np.histogram(acidez_data, bins=20)
         hist_df_acidez = pd.DataFrame(hist_values_acidez, index=bin_edges_acidez[:-1])
         st.bar_chart(hist_df_acidez)
         
-        # Gráfico de Jabones Simulados
         st.subheader("Jabones Simulados (ppm)")
-        st.line_chart(
-            df_filtrado,
-            y='sim_jabones_ppm_fisico'
-        )
-
-        # Histograma de Jabones Simulados
+        st.line_chart(df_filtrado, y='sim_jabones_ppm_fisico')
         st.subheader("Distribución de Jabones Simulados")
-        hist_values_jabon, bin_edges_jabon = np.histogram(
-            df_filtrado['sim_jabones_ppm_fisico'].dropna(), bins=20
-        )
+        hist_values_jabon, bin_edges_jabon = np.histogram(df_filtrado['sim_jabones_ppm_fisico'].dropna(), bins=20)
         hist_df_jabon = pd.DataFrame(hist_values_jabon, index=bin_edges_jabon[:-1])
         st.bar_chart(hist_df_jabon)
 
 
         # -------------------------------------------------
-        # SECCIÓN 4: SPC Y CAPACIDAD DE PROCESO (NUEVA)
+        # SECCIÓN 4: SPC Y CAPACIDAD DE PROCESO (Cpk)
+        # ... (Esta sección no cambia) ...
         # -------------------------------------------------
         st.header("4. Análisis de Estabilidad (SPC) y Capacidad (Cpk)")
 
-        # --- NUEVO GRÁFICO DE CONTROL (SPC) ---
         st.subheader("Gráfico de Control de Acidez Final (SPC)")
-        
-        # Calcular estadísticas para el gráfico de control
         media = acidez_data.mean()
         std_dev = acidez_data.std()
-        
-        # Límites de control (3-sigma)
-        ucl = media + (3 * std_dev) # Upper Control Limit
-        lcl = media - (3 * std_dev) # Lower Control Limit
-        
-        # Crear un DataFrame para el gráfico
-        spc_df = pd.DataFrame({
-            'Acidez': acidez_data,
-            'Media': media,
-            'Límite Superior (UCL)': ucl,
-            'Límite Inferior (LCL)': lcl
-        })
-        
-        # Graficar
+        ucl = media + (3 * std_dev) 
+        lcl = media - (3 * std_dev) 
+        spc_df = pd.DataFrame({'Acidez': acidez_data, 'Media': media, 'Límite Superior (UCL)': ucl, 'Límite Inferior (LCL)': lcl})
         st.line_chart(spc_df)
         st.info(f"Media: {media:.3f} | Límite Superior (UCL): {ucl:.3f} | Límite Inferior (LCL): {lcl:.3f}")
 
-        # --- NUEVO ANÁLISIS DE CAPACIDAD (Cpk) ---
         st.subheader("Análisis de Capacidad del Proceso (Cpk)")
-
-        # Calcular Cpk
-        if std_dev > 0: # Evitar división por cero si solo hay un dato
+        if std_dev > 0: 
             cpu = (usl - media) / (3 * std_dev)
             cpl = (media - lsl) / (3 * std_dev)
-            
-            # El Cpk es el PEOR de los dos lados
             cpk = min(cpu, cpl)
-            
             col1_cpk, col2_cpk = st.columns(2)
             col1_cpk.metric("Valor Cpk", f"{cpk:.2f}")
-            
-            # Interpretar el Cpk
-            if cpk < 0.7:
+            if cpk < 1.0:
                 col2_cpk.error("No Capaz: El proceso produce defectos.")
             elif cpk < 1.33:
                 col2_cpk.warning("Aceptable, pero requiere control estricto.")
             else:
                 col2_cpk.success("¡Capaz! El proceso es robusto.")
-            
-            st.markdown(f"""
-            - **Media del Proceso:** `{media:.3f}`
-            - **Límites de Especificación:** `{lsl}` (LSL) a `{usl}` (USL)
-            - *Un Cpk > 1.33 es considerado excelente.*
-            """)
+            st.markdown(f"""- **Media del Proceso:** `{media:.3f}` | **Límites de Especificación:** `{lsl}` (LSL) a `{usl}` (USL)""")
         else:
-            st.warning("No se puede calcular Cpk: Se necesita más de un punto de dato o la desviación estándar es cero.")
+            st.warning("No se puede calcular Cpk: Se necesita más de un punto de dato.")
 
 
         # -------------------------------------------------
-        # SECCIÓN 5: ANÁLISIS DE COSTOS (NUEVA)
+        # SECCIÓN 5: ANÁLISIS DE COSTOS (ACTUALIZADA)
         # -------------------------------------------------
         st.header("5. Análisis de Costo/Beneficio")
         
-        # Calcular costos por hora (usando los valores del sidebar)
-        df_filtrado['Costo_Real_Hora'] = (df_filtrado['caudal_naoh_in'] * costo_soda) + \
-                                         (df_filtrado['caudal_agua_in'] * costo_agua)
-        
-        df_filtrado['Costo_Optimo_Hora'] = (df_filtrado['opt_caudal_naoh_Lh'] * costo_soda) + \
-                                          (df_filtrado['opt_caudal_agua_Lh'] * costo_agua)
-
-        # Calcular el costo total en el período filtrado
-        # Asumiendo que cada fila es una "hora" (o una medición representativa)
-        # Si tus datos son más frecuentes (ej. por minuto), necesitaríamos el delta de tiempo
-        # Por ahora, asumimos que 'sum()' es una buena aproximación del costo total
-        
-        # PARA UN CÁLCULO MÁS PRECISO:
-        # 1. Necesitaríamos saber el intervalo de tiempo entre filas.
-        # 2. Si las filas son cada minuto, dividir el costo/hora por 60.
-        # Por simplicidad, sumaremos los costos "por medición"
-        
-        costo_total_real = df_filtrado['Costo_Real_Hora'].sum()
-        costo_total_optimo = df_filtrado['Costo_Optimo_Hora'].sum()
-        ahorro_potencial = costo_total_real - costo_total_optimo
-        
+        # Las métricas ahora usan los valores totales precisos
         col1_costo, col2_costo, col3_costo = st.columns(3)
         col1_costo.metric("Costo Real Total (Período)", f"${costo_total_real:,.2f}")
         col2_costo.metric("Costo Óptimo Total (Período)", f"${costo_total_optimo:,.2f}")
         col3_costo.metric("Ahorro Potencial Perdido", f"${ahorro_potencial:,.2f}", 
                            delta_color="inverse")
 
-        st.info("El 'Ahorro Potencial Perdido' es el costo extra pagado por no seguir la dosificación óptima en el período filtrado.")
+        st.info(f"""
+        El 'Ahorro Potencial Perdido' es el costo extra pagado por no seguir la dosificación óptima en el período filtrado.
+        Cálculo basado en: Costo Soda = ${costo_soda_kg}/kg ({costo_soda_litro:.2f} $/L) y Costo Agua = ${costo_agua}/L.
+        """)
         
-        st.subheader("Costo por Hora (Real vs. Óptimo)")
+        # El gráfico de línea sigue mostrando el "costo por hora"
+        # Esto es bueno para ver la *tasa* de gasto en el tiempo
+        st.subheader("Tasa de Gasto por Hora (Real vs. Óptimo)")
         st.line_chart(df_filtrado, y=['Costo_Real_Hora', 'Costo_Optimo_Hora'])
         
 
         # -------------------------------------------------
-        # SECCIÓN 6: DATOS CRUDOS (antes Sección 4)
+        # SECCIÓN 6: DATOS CRUDOS
         # -------------------------------------------------
         st.header("6. Datos Crudos Filtrados")
         st.dataframe(df_filtrado)

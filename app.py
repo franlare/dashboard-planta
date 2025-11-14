@@ -15,8 +15,8 @@ def cargar_datos():
         
         # -----------------
         # ! REEMPLAZA ESTOS VALORES !
-        NOMBRE_SHEET = "MIEjemplo" # <- ASEGÚRATE DE QUE SEA TU NOMBRE REAL
-        NOMBRE_PESTAÑA = "Sheet1" # <- Y ESTE EL DE TU PESTAÑA
+        NOMBRE_SHEET = "Resultados_Planta" # <- ASEGÚRATE DE QUE SEA TU NOMBRE REAL
+        NOMBRE_PESTAÑA = "Hoja 1" # <- Y ESTE EL DE TU PESTAÑA
         # -----------------
 
         spreadsheet = gc.open(NOMBRE_SHEET)
@@ -277,3 +277,4 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+

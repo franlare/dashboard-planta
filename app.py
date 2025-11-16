@@ -82,7 +82,7 @@ if data_loaded_successfully and not df.empty:
     end_date = pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
 
     st.sidebar.header("Límites de Especificación (Cpk)")
-    usl = st.sidebar.number_input("Acidez - Límite Superior (USL)", value=0.04, format="%.3f")
+    usl = st.sidebar.number_input("Acidez - Límites Superior (USL)", value=0.04, format="%.3f")
     lsl = st.sidebar.number_input("Acidez - Límite Inferior (LSL)", value=0.015, format="%.3f")
 
     st.sidebar.header("Costos de Insumos")
@@ -237,14 +237,16 @@ if data_loaded_successfully and not df.empty:
             st.subheader("Análisis de Costo por Hora")
             st.line_chart(df_filtrado, y=['Costo_Real_Hora', 'Costo_Optimo_Hora'])
             
-            # --- ¡LÍNEA CORREGIDA! ---
-            st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f} [cite: 5, 232-234].")
+            # --- ¡LÍNEA 1 CORREGIDA! ---
+            st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f}.")
             
             st.divider()
             
             st.subheader("Análisis de Merma (ML vs. Teórica)")
             st.line_chart(df_filtrado, y=['sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'])
-            [cite_start]st.info(f"La 'Merma Operativa Extra' (diferencia entre ambas líneas) promedió {merma_extra_media:.3f}% [cite: 5, 244-245, 6, 261].")
+            
+            # --- ¡LÍNEA 2 CORREGIDA! ---
+            st.info(f"La 'Merma Operativa Extra' (diferencia entre ambas líneas) promedió {merma_extra_media:.3f}%.")
 
         # --- Pestaña 5: Datos Crudos ---
         with tab5:

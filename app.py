@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # -------------------------------------------------------------------
-# 1. AUTENTICACIÓN Y ACCESO A GOOGLE SHEETS (Sin cambios)
+# 1. AUTENTICACIÓN Y ACCESO A GOOGLE SHEETS
 # -------------------------------------------------------------------
 
 @st.cache_data(ttl=600) # Cachea los datos por 10 minutos (600 seg)
@@ -64,7 +64,7 @@ st.title("📊 Dashboard de Control y Optimización (Modelo Híbrido)")
 if data_loaded_successfully and not df.empty:
 
     # -------------------------------------------------
-    # BARRA LATERAL (SIDEBAR) (Sin cambios)
+    # BARRA LATERAL (SIDEBAR)
     # -------------------------------------------------
     st.sidebar.header("Filtros de Análisis")
     
@@ -236,7 +236,9 @@ if data_loaded_successfully and not df.empty:
         with tab4:
             st.subheader("Análisis de Costo por Hora")
             st.line_chart(df_filtrado, y=['Costo_Real_Hora', 'Costo_Optimo_Hora'])
-            [cite_start]st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f} [cite: 5, 232-234].")
+            
+            # --- ¡LÍNEA CORREGIDA! ---
+            st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f} [cite: 5, 232-234].")
             
             st.divider()
             

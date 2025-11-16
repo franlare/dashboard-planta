@@ -51,7 +51,7 @@ def cargar_datos():
         st.error(f"Ocurrió un error cargando datos: {e}")
         return pd.DataFrame(), False
 
-# --- ¡NUEVO! Paleta de Colores de Alto Contraste ---
+# --- Paleta de Colores de Alto Contraste ---
 COLOR_REAL = "#D95319"     # Naranja/Rojo
 COLOR_OPTIMO = "#0072B2"    # Azul
 COLOR_MERMA_ML = "#E4003A"   # Rojo
@@ -69,7 +69,7 @@ df, data_loaded_successfully = cargar_datos()
 # -------------------------------------------------------------------
 
 st.set_page_config(layout="wide")
-st.title("📊 Dashboard de Control y Optimización (Modelo Híbrido)")
+st.title("📊 Dashboard de Control y Optimización")
 
 if data_loaded_successfully and not df.empty:
 
@@ -91,10 +91,15 @@ if data_loaded_successfully and not df.empty:
     start_date = pd.to_datetime(date_range[0])
     end_date = pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
 
-    st.sidebar.header("Límites de Especificación (Cpk)")
-    # --- ¡CAMBIO 1! Límites de Cpk actualizados ---
+    st.sidebar.header("Límites de Especificación")
     usl = st.sidebar.number_input("Acidez - Límite Superior (USL)", value=0.045, format="%.3f")
     lsl = st.sidebar.number_input("Acidez - Límite Inferior (LSL)", value=0.025, format="%.3f")
+    
+    # --- ¡CAMBIO 1! Añadidos límites para jabones ---
+    st.sidebar.markdown("---")
+    usl_jabones = st.sidebar.number_input("Jabones - Límite Superior (USL)", value=150)
+    lsl_jabones = st.sidebar.number_input("Jabones - Límite Inferior (LSL)", value=125)
+    # --- FIN CAMBIO 1 ---
 
     st.sidebar.header("Costos de Insumos")
     costo_soda = st.sidebar.number_input("Costo Soda ($/L)", value=0.5, format="%.2f")
@@ -120,7 +125,6 @@ if data_loaded_successfully and not df.empty:
         mae_soda = np.mean(np.abs(df_filtrado['Error_Dosificacion_Soda']))
         mae_agua = np.mean(np.abs(df_filtrado['Error_Dosificacion_Agua']))
         
-        # --- ¡NUEVO! Columna Cero para gráficos de residuos ---
         df_filtrado['Zero_Line'] = 0.0
 
         # --- Acidez y Cpk ---
@@ -162,12 +166,10 @@ if data_loaded_successfully and not df.empty:
             
             col1, col2, col3 = st.columns(3)
             
-            # KPI de Costo
             col1.metric("Ahorro Potencial Perdido", f"${ahorro_potencial:,.2f}", 
                          help="Costo extra pagado por no seguir la dosificación óptima en el período.",
                          delta_color="inverse")
             
-            # KPI de Calidad
             cpk_text = f"{cpk:.2f}"
             if cpk < 0.7: cpk_text += " 🔴 (No Capaz)"
             elif cpk < 1.33: cpk_text += " 🟡 (Aceptable)"
@@ -175,7 +177,6 @@ if data_loaded_successfully and not df.empty:
             col2.metric("Capacidad de Proceso (Cpk)", cpk_text,
                          help="Mide qué tan bien el proceso se ajusta a los límites de especificación de acidez.")
             
-            # KPI de Eficiencia
             col3.metric("Merma Operativa Extra (Promedio)", f"{merma_extra_media:.3f}%",
                          help="Merma promedio predicha por ML por encima de la merma teórica.")
 
@@ -195,9 +196,8 @@ if data_loaded_successfully and not df.empty:
                 st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
                 st.line_chart(df_filtrado, 
                               y=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
-                              color=[COLOR_REAL, COLOR_OPTIMO]) # <-- ¡CAMBIO 3!
+                              color=[COLOR_REAL, COLOR_OPTIMO])
             with col2:
-                # --- ¡CAMBIO 2! Histograma reemplazado por Gráfico de Residuos ---
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
                               y=['Error_Dosificacion_Soda', 'Zero_Line'],
@@ -211,9 +211,8 @@ if data_loaded_successfully and not df.empty:
                 st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
                 st.line_chart(df_filtrado, 
                               y=['caudal_agua_in', 'opt_hibrida_agua_Lh'],
-                              color=[COLOR_REAL, COLOR_OPTIMO]) # <-- ¡CAMBIO 3!
+                              color=[COLOR_REAL, COLOR_OPTIMO])
             with col4:
-                # --- ¡CAMBIO 2! Histograma reemplazado por Gráfico de Residuos ---
                 st.markdown("##### Gráfico de Residuos (Error) Agua")
                 st.line_chart(df_filtrado, 
                               y=['Error_Dosificacion_Agua', 'Zero_Line'],
@@ -225,11 +224,22 @@ if data_loaded_successfully and not df.empty:
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("##### Acidez Final Simulada (Híbrida)")
-                st.line_chart(df_filtrado, y='sim_acidez_HIBRIDA', color=[COLOR_ACIDEZ]) # <-- ¡CAMBIO 3!
+                st.line_chart(df_filtrado, y='sim_acidez_HIBRIDA', color=[COLOR_ACIDEZ])
             with col2:
+                # --- ¡CAMBIO 2! Histograma con Bins Fijos ---
                 st.markdown("##### Distribución de Acidez Final")
-                hist_acidez, bins_acidez = np.histogram(acidez_data, bins=20)
-                st.bar_chart(pd.DataFrame(hist_acidez, index=bins_acidez[:-1]), color=[COLOR_ACIDEZ]) # <-- ¡CAMBIO 3!
+                # 21 bordes = 20 bins fijos entre LSL y USL
+                bins_acidez = np.linspace(lsl, usl, num=21) 
+                hist_acidez, _ = np.histogram(acidez_data, bins=bins_acidez)
+                
+                # Crear etiquetas legibles para el eje X
+                bin_labels_acidez = [f"{edge:.3f}" for edge in bins_acidez[:-1]]
+                
+                hist_df_acidez = pd.DataFrame(hist_acidez, index=bin_labels_acidez)
+                hist_df_acidez.index.name = "Acidez (%FFA)"
+                
+                st.bar_chart(hist_df_acidez, color=[COLOR_ACIDEZ])
+                # --- FIN CAMBIO 2 ---
 
             st.markdown("##### Gráfico de Control de Acidez (SPC)")
             spc_df = pd.DataFrame({
@@ -238,7 +248,7 @@ if data_loaded_successfully and not df.empty:
                 'Límite Superior (UCL)': media + (3 * std_dev),
                 'Límite Inferior (LCL)': media - (3 * std_dev)
             })
-            st.line_chart(spc_df) # El gráfico SPC de Streamlit se colorea automáticamente
+            st.line_chart(spc_df)
             
             st.divider()
             
@@ -246,20 +256,31 @@ if data_loaded_successfully and not df.empty:
             col3, col4 = st.columns(2)
             with col3:
                 st.markdown("##### Jabones Simulados (Híbrido)")
-                st.line_chart(df_filtrado, y='sim_jabones_HIBRIDO', color=[COLOR_JABONES]) # <-- ¡CAMBIO 3!
+                st.line_chart(df_filtrado, y='sim_jabones_HIBRIDO', color=[COLOR_JABONES])
             with col4:
+                # --- ¡CAMBIO 3! Histograma con Bins Fijos ---
                 st.markdown("##### Distribución de Jabones")
-                hist_jabon, bins_jabon = np.histogram(
-                    df_filtrado['sim_jabones_HIBRIDO'].dropna(), bins=20
+                # 21 bordes = 20 bins fijos entre LSL y USL de jabones
+                bins_jabon = np.linspace(lsl_jabones, usl_jabones, num=21) 
+                hist_jabon, _ = np.histogram(
+                    df_filtrado['sim_jabones_HIBRIDO'].dropna(), bins=bins_jabon
                 )
-                st.bar_chart(pd.DataFrame(hist_jabon, index=bins_jabon[:-1]), color=[COLOR_JABONES]) # <-- ¡CAMBIO 3!
+                
+                # Crear etiquetas legibles para el eje X
+                bin_labels_jabon = [f"{edge:.1f}" for edge in bins_jabon[:-1]]
+                
+                hist_df_jabon = pd.DataFrame(hist_jabon, index=bin_labels_jabon)
+                hist_df_jabon.index.name = "Jabones (ppm)"
+
+                st.bar_chart(hist_df_jabon, color=[COLOR_JABONES])
+                # --- FIN CAMBIO 3 ---
         
         # --- Pestaña 4: Costos y Merma ---
         with tab4:
             st.subheader("Análisis de Costo por Hora")
             st.line_chart(df_filtrado, 
                           y=['Costo_Real_Hora', 'Costo_Optimo_Hora'],
-                          color=[COLOR_REAL, COLOR_OPTIMO]) # <-- ¡CAMBIO 3!
+                          color=[COLOR_REAL, COLOR_OPTIMO])
             st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f}.")
             
             st.divider()
@@ -267,7 +288,7 @@ if data_loaded_successfully and not df.empty:
             st.subheader("Análisis de Merma (ML vs. Teórica)")
             st.line_chart(df_filtrado, 
                           y=['sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'],
-                          color=[COLOR_MERMA_ML, COLOR_MERMA_TEO]) # <-- ¡CAMBIO 3!
+                          color=[COLOR_MERMA_ML, COLOR_MERMA_TEO])
             st.info(f"La 'Merma Operativa Extra' (diferencia entre ambas líneas) promedió {merma_extra_media:.3f}%.")
 
         # --- Pestaña 5: Datos Crudos ---

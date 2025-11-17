@@ -181,19 +181,19 @@ if data_loaded_successfully and not df.empty:
             if cpk < 0.7: cpk_text += " 🔴 (No Capaz)"
             elif cpk < 1.33: cpk_text += " 🟡 (Aceptable)"
             else: cpk_text += " 🟢 (Capaz)"
-            col2.metric("Capacidad de Proceso (Cpk)", cpk_text,
+            col2.metric("🎯 Capacidad de Proceso (Cpk)", cpk_text, # <-- ÍCONO AÑADIDO
                         help="Mide qué tan bien el proceso se ajusta a los límites de especificación de acidez.")
             
-            col3.metric("Merma Operativa Extra (Promedio)", f"{merma_extra_media:.3f}%",
+            col3.metric("📉 Merma Operativa Extra (Promedio)", f"{merma_extra_media:.3f}%", # <-- ÍCONO AÑADIDO
                         help="Merma promedio predicha por ML por encima de la merma teórica.")
 
             st.divider()
             
             st.subheader("Errores de Seguimiento (Promedio)")
             col4, col5, col6 = st.columns(3)
-            col4.metric("Error Absoluto Soda (MAE)", f"{mae_soda:.2f} L/h")
-            col5.metric("Error Absoluto Agua (MAE)", f"{mae_agua:.2f} L/h")
-            col6.metric("N° de Muestras Analizadas", f"{len(df_filtrado)}")
+            col4.metric("❌ Error Absoluto Soda (MAE)", f"{mae_soda:.2f} L/h")
+            col5.metric("💧 Error Absoluto Agua (MAE)", f"{mae_agua:.2f} L/h")
+            col6.metric("📅 N° de Muestras Analizadas", f"{len(df_filtrado)}")
 
         # --- Pestaña 2: Análisis de Dosificación (Error) ---
         with tab2:
@@ -233,8 +233,10 @@ if data_loaded_successfully and not df.empty:
                         interpolate='monotone', 
                         strokeWidth=3           
                     ).encode(
-                        x=alt.X('timestamp', title='Fecha'),
-                        y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
+                        # --- CAMBIO CLAVE: ELIMINAR CUADRÍCULA Y DOMINIO ---
+                        x=alt.X('timestamp', title='Fecha', axis=alt.Axis(grid=False)), 
+                        y=alt.Y('Caudal (L/h)', title='Caudal (L/h)', axis=alt.Axis(grid=False, domain=False)),
+                        # --- FIN DEL CAMBIO CLAVE ---
                         color=alt.Color('Leyenda', scale=color_scale, 
                                         legend=alt.Legend(title="Dosificación", 
                                                           orient="right")), 
@@ -282,13 +284,13 @@ if data_loaded_successfully and not df.empty:
                 })
                 
                 color_scale_agua = alt.Scale(domain=domain_, range=range_)
-
+            
                 chart_agua = alt.Chart(df_agua_chart).mark_line(
                     interpolate='monotone', # Líneas suaves
                     strokeWidth=3
                 ).encode(
-                    x=alt.X('timestamp', title='Fecha'),
-                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
+                    x=alt.X('timestamp', title='Fecha', axis=alt.Axis(grid=False)), 
+                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)', axis=alt.Axis(grid=False, domain=False)),
                     color=alt.Color('Leyenda', scale=color_scale_agua, 
                                     legend=alt.Legend(title="Dosificación", 
                                                       orient="right")),
@@ -387,8 +389,8 @@ if data_loaded_successfully and not df.empty:
                 interpolate='monotone', # Líneas suaves
                 strokeWidth=3
             ).encode(
-                x=alt.X('timestamp', title='Fecha'),
-                y=alt.Y('Costo ($/Hora)', title='Costo ($/Hora)'),
+                x=alt.X('timestamp', title='Fecha', axis=alt.Axis(grid=False)), 
+                y=alt.Y('Costo ($/Hora)', title='Costo ($/Hora)', axis=alt.Axis(grid=False, domain=False)),
                 color=alt.Color('Leyenda', scale=color_scale_costo, 
                                 legend=alt.Legend(title="Tipo de Costo", 
                                                   orient="right")),
@@ -432,6 +434,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

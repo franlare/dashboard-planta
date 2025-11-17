@@ -207,47 +207,47 @@ if data_loaded_successfully and not df.empty:
             with col1:
                 with col1:
                 # --- INICIO DEL CAMBIO: GRÁFICO DE SODA CON LÍNEAS CURVAS Y LIMPIAS ---
-                st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
-
-                # 1. Preparar datos para Altair (formato "largo")
-                df_soda_chart = df_filtrado.reset_index().melt(
-                    id_vars=['timestamp'], 
-                    value_vars=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
-                    var_name='Leyenda',
-                    value_name='Caudal (L/h)'
-                )
-                
-                # Renombrar para leyenda amigable
-                df_soda_chart['Leyenda'] = df_soda_chart['Leyenda'].replace({
-                    'caudal_naoh_in': 'Real (Naranja)',
-                    'opt_hibrida_naoh_Lh': 'Óptimo (Azul)'
-                })
-                
-                # 2. Definir la escala de colores
-                domain_ = ['Real (Naranja)', 'Óptimo (Azul)']
-                range_ = [COLOR_REAL, COLOR_OPTIMO]
-                color_scale = alt.Scale(domain=domain_, range=range_)
-
-                # 3. Crear el gráfico de línea (sin área)
-                chart = alt.Chart(df_soda_chart).mark_line(
-                    interpolate='monotone', 
-                    strokeWidth=3           
-                ).encode(
-                    x=alt.X('timestamp', title='Fecha'),
-                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
-                    color=alt.Color('Leyenda', scale=color_scale, 
-                                    legend=alt.Legend(title="Dosificación", 
-                                                      orient="right")), 
-                    tooltip=[
-                        alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
-                        alt.Tooltip('Leyenda', title='Tipo'),
-                        alt.Tooltip('Caudal (L/h)', format='.2f')
-                    ]
-                ).properties(
-                    title=alt.Title('Seguimiento Real vs. Óptimo (Caudal de Soda)', anchor='start')
-                ).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
+                    st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
+    
+                    # 1. Preparar datos para Altair (formato "largo")
+                    df_soda_chart = df_filtrado.reset_index().melt(
+                        id_vars=['timestamp'], 
+                        value_vars=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
+                        var_name='Leyenda',
+                        value_name='Caudal (L/h)'
+                    )
+                    
+                    # Renombrar para leyenda amigable
+                    df_soda_chart['Leyenda'] = df_soda_chart['Leyenda'].replace({
+                        'caudal_naoh_in': 'Real (Naranja)',
+                        'opt_hibrida_naoh_Lh': 'Óptimo (Azul)'
+                    })
+                    
+                    # 2. Definir la escala de colores
+                    domain_ = ['Real (Naranja)', 'Óptimo (Azul)']
+                    range_ = [COLOR_REAL, COLOR_OPTIMO]
+                    color_scale = alt.Scale(domain=domain_, range=range_)
+    
+                    # 3. Crear el gráfico de línea (sin área)
+                    chart = alt.Chart(df_soda_chart).mark_line(
+                        interpolate='monotone', 
+                        strokeWidth=3           
+                    ).encode(
+                        x=alt.X('timestamp', title='Fecha'),
+                        y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
+                        color=alt.Color('Leyenda', scale=color_scale, 
+                                        legend=alt.Legend(title="Dosificación", 
+                                                          orient="right")), 
+                        tooltip=[
+                            alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
+                            alt.Tooltip('Leyenda', title='Tipo'),
+                            alt.Tooltip('Caudal (L/h)', format='.2f')
+                        ]
+                    ).properties(
+                        title=alt.Title('Seguimiento Real vs. Óptimo (Caudal de Soda)', anchor='start')
+                    ).interactive()
+                    
+                    st.altair_chart(chart, use_container_width=True)
                 # --- FIN DEL CAMBIO ---
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
@@ -432,6 +432,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

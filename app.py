@@ -204,7 +204,7 @@ if data_loaded_successfully and not df.empty:
             col_m2.metric("Último Valor Óptimo (Soda)", f"{last_soda_opt:.2f} L/h")
             
             col1, col2 = st.columns(2)
-            with col1:
+          with col1:
                 # --- INICIO DEL CAMBIO: GRÁFICO DE SODA CON LÍNEAS CURVAS Y LIMPIAS ---
                 st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
 
@@ -236,7 +236,7 @@ if data_loaded_successfully and not df.empty:
                     y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
                     color=alt.Color('Leyenda', scale=color_scale, 
                                     legend=alt.Legend(title="Dosificación", 
-                                                      orient="top-right")), # Leyenda más limpia
+                                                      **orient="right"**)), # <--- LEYENDA MOVIDA
                     tooltip=[
                         alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
                         alt.Tooltip('Leyenda', title='Tipo'),
@@ -247,7 +247,6 @@ if data_loaded_successfully and not df.empty:
                 ).interactive()
                 
                 st.altair_chart(chart, use_container_width=True)
-                # --- FIN DEL CAMBIO ---
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
@@ -265,9 +264,43 @@ if data_loaded_successfully and not df.empty:
             col3, col4 = st.columns(2)
             with col3:
                 st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
-                st.line_chart(df_filtrado, 
-                                y=['caudal_agua_in', 'opt_hibrida_agua_Lh'],
-                                color=[COLOR_REAL, COLOR_OPTIMO])
+                
+                # --- INICIO DEL CAMBIO: GRÁFICO DE AGUA CON ALTAIR ---
+                
+                df_agua_chart = df_filtrado.reset_index().melt(
+                    id_vars=['timestamp'], 
+                    value_vars=['caudal_agua_in', 'opt_hibrida_agua_Lh'],
+                    var_name='Leyenda',
+                    value_name='Caudal (L/h)'
+                )
+                
+                df_agua_chart['Leyenda'] = df_agua_chart['Leyenda'].replace({
+                    'caudal_agua_in': 'Real (Naranja)',
+                    'opt_hibrida_agua_Lh': 'Óptimo (Azul)'
+                })
+                
+                color_scale_agua = alt.Scale(domain=domain_, range=range_)
+
+                chart_agua = alt.Chart(df_agua_chart).mark_line(
+                    interpolate='monotone', # Líneas suaves
+                    strokeWidth=3
+                ).encode(
+                    x=alt.X('timestamp', title='Fecha'),
+                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
+                    color=alt.Color('Leyenda', scale=color_scale_agua, 
+                                    legend=alt.Legend(title="Dosificación", 
+                                                      orient="right")),
+                    tooltip=[
+                        alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
+                        alt.Tooltip('Leyenda', title='Tipo'),
+                        alt.Tooltip('Caudal (L/h)', format='.2f')
+                    ]
+                ).properties(
+                    title=alt.Title('Seguimiento Real vs. Óptimo (Caudal de Agua)', anchor='start')
+                ).interactive()
+                
+                st.altair_chart(chart_agua, use_container_width=True)
+                # --- FIN DEL CAMBIO ---
             with col4:
                 st.markdown("##### Gráfico de Residuos (Error) Agua")
                 st.line_chart(df_filtrado, 
@@ -326,6 +359,54 @@ if data_loaded_successfully and not df.empty:
         # --- Pestaña 4: Costos y Merma ---
         with tab4:
             st.subheader("Análisis de Costo por Hora")
+            # --- Pestaña 4: Costos y Merma ---
+        with tab4:
+            st.subheader("Análisis de Costo por Hora")
+            
+            # --- INICIO DEL CAMBIO: GRÁFICO DE COSTOS CON ALTAIR ---
+            
+            df_costo_chart = df_filtrado.reset_index().melt(
+                id_vars=['timestamp'], 
+                value_vars=['Costo_Real_Hora', 'Costo_Optimo_Hora'],
+                var_name='Leyenda',
+                value_name='Costo ($/Hora)'
+            )
+            
+            df_costo_chart['Leyenda'] = df_costo_chart['Leyenda'].replace({
+                'Costo_Real_Hora': 'Costo Real',
+                'Costo_Optimo_Hora': 'Costo Óptimo'
+            })
+            
+            domain_costo = ['Costo Real', 'Costo Óptimo']
+            range_costo = [COLOR_REAL, COLOR_OPTIMO] # Usamos los mismos colores
+            color_scale_costo = alt.Scale(domain=domain_costo, range=range_costo)
+
+            chart_costo = alt.Chart(df_costo_chart).mark_line(
+                interpolate='monotone', # Líneas suaves
+                strokeWidth=3
+            ).encode(
+                x=alt.X('timestamp', title='Fecha'),
+                y=alt.Y('Costo ($/Hora)', title='Costo ($/Hora)'),
+                color=alt.Color('Leyenda', scale=color_scale_costo, 
+                                legend=alt.Legend(title="Tipo de Costo", 
+                                                  orient="right")),
+                tooltip=[
+                    alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
+                    alt.Tooltip('Leyenda', title='Tipo'),
+                    alt.Tooltip('Costo ($/Hora)', format='$.2f')
+                ]
+            ).properties(
+                title=alt.Title('Seguimiento de Costos por Hora', anchor='start')
+            ).interactive()
+            
+            st.altair_chart(chart_costo, use_container_width=True)
+            
+            # --- FIN DEL CAMBIO ---
+
+            st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f}.")
+            
+            st.divider()
+            # ... el resto de la Pestaña 4 sigue igual ...
             st.line_chart(df_filtrado, 
                             y=['Costo_Real_Hora', 'Costo_Optimo_Hora'],
                             color=[COLOR_REAL, COLOR_OPTIMO])
@@ -349,5 +430,6 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 

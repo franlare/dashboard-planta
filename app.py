@@ -54,7 +54,7 @@ def cargar_datos():
 # --- Paleta de Colores de Alto Contraste ---
 COLOR_REAL = "#D95319"     # Naranja/Rojo
 COLOR_OPTIMO = "#0072B2"    # Azul
-COLOR_MERMA_ML = "#E4003A"   # Rojo
+COLOR_MERMA_ML = "#E4003A"    # Rojo
 COLOR_MERMA_TEO = "#5E3B8D" # Morado
 COLOR_ACIDEZ = "#009E73"    # Verde
 COLOR_JABONES = "#F0E442"   # Amarillo
@@ -148,6 +148,14 @@ if data_loaded_successfully and not df.empty:
         df_filtrado['Merma_Extra_ML'] = df_filtrado['sim_merma_ML_TOTAL'] - df_filtrado['sim_merma_TEORICA_L']
         merma_extra_media = df_filtrado['Merma_Extra_ML'].mean()
         
+        # --- ¡NUEVO! OBTENER ÚLTIMOS VALORES ---
+        last_row = df_filtrado.iloc[-1]
+        last_soda_real = last_row['caudal_naoh_in']
+        last_soda_opt = last_row['opt_hibrida_naoh_Lh']
+        last_agua_real = last_row['caudal_agua_in']
+        last_agua_opt = last_row['opt_hibrida_agua_Lh']
+        # --- FIN NUEVO ---
+        
         # -------------------------------------------------
         # ¡NUEVO DISEÑO CON PESTAÑAS!
         # -------------------------------------------------
@@ -167,18 +175,18 @@ if data_loaded_successfully and not df.empty:
             col1, col2, col3 = st.columns(3)
             
             col1.metric("Ahorro Potencial Perdido", f"${ahorro_potencial:,.2f}", 
-                         help="Costo extra pagado por no seguir la dosificación óptima en el período.",
-                         delta_color="inverse")
+                        help="Costo extra pagado por no seguir la dosificación óptima en el período.",
+                        delta_color="inverse")
             
             cpk_text = f"{cpk:.2f}"
             if cpk < 0.7: cpk_text += " 🔴 (No Capaz)"
             elif cpk < 1.33: cpk_text += " 🟡 (Aceptable)"
             else: cpk_text += " 🟢 (Capaz)"
             col2.metric("Capacidad de Proceso (Cpk)", cpk_text,
-                         help="Mide qué tan bien el proceso se ajusta a los límites de especificación de acidez.")
+                        help="Mide qué tan bien el proceso se ajusta a los límites de especificación de acidez.")
             
             col3.metric("Merma Operativa Extra (Promedio)", f"{merma_extra_media:.3f}%",
-                         help="Merma promedio predicha por ML por encima de la merma teórica.")
+                        help="Merma promedio predicha por ML por encima de la merma teórica.")
 
             st.divider()
             
@@ -191,32 +199,46 @@ if data_loaded_successfully and not df.empty:
         # --- Pestaña 2: Análisis de Dosificación (Error) ---
         with tab2:
             st.subheader("Análisis de Error: Dosificación de Soda")
+            
+            # --- ¡NUEVO! MÉTRICAS ÚLTIMO VALOR SODA ---
+            col_m1, col_m2 = st.columns(2)
+            col_m1.metric("Último Valor Real (Soda)", f"{last_soda_real:.2f} L/h")
+            col_m2.metric("Último Valor Óptimo (Soda)", f"{last_soda_opt:.2f} L/h")
+            # --- FIN NUEVO ---
+            
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
                 st.line_chart(df_filtrado, 
-                              y=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
-                              color=[COLOR_REAL, COLOR_OPTIMO])
+                                y=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
+                                color=[COLOR_REAL, COLOR_OPTIMO])
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
-                              y=['Error_Dosificacion_Soda', 'Zero_Line'],
-                              color=[COLOR_ERROR, COLOR_ZERO])
+                                y=['Error_Dosificacion_Soda', 'Zero_Line'],
+                                color=[COLOR_ERROR, COLOR_ZERO])
 
             st.divider()
             
             st.subheader("Análisis de Error: Dosificación de Agua")
+            
+            # --- ¡NUEVO! MÉTRICAS ÚLTIMO VALOR AGUA ---
+            col_m3, col_m4 = st.columns(2)
+            col_m3.metric("Último Valor Real (Agua)", f"{last_agua_real:.2f} L/h")
+            col_m4.metric("Último Valor Óptimo (Agua)", f"{last_agua_opt:.2f} L/h")
+            # --- FIN NUEVO ---
+            
             col3, col4 = st.columns(2)
             with col3:
                 st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
                 st.line_chart(df_filtrado, 
-                              y=['caudal_agua_in', 'opt_hibrida_agua_Lh'],
-                              color=[COLOR_REAL, COLOR_OPTIMO])
+                                y=['caudal_agua_in', 'opt_hibrida_agua_Lh'],
+                                color=[COLOR_REAL, COLOR_OPTIMO])
             with col4:
                 st.markdown("##### Gráfico de Residuos (Error) Agua")
                 st.line_chart(df_filtrado, 
-                              y=['Error_Dosificacion_Agua', 'Zero_Line'],
-                              color=[COLOR_ERROR, COLOR_ZERO])
+                                y=['Error_Dosificacion_Agua', 'Zero_Line'],
+                                color=[COLOR_ERROR, COLOR_ZERO])
 
         # --- Pestaña 3: Calidad de Producto ---
         with tab3:
@@ -279,16 +301,16 @@ if data_loaded_successfully and not df.empty:
         with tab4:
             st.subheader("Análisis de Costo por Hora")
             st.line_chart(df_filtrado, 
-                          y=['Costo_Real_Hora', 'Costo_Optimo_Hora'],
-                          color=[COLOR_REAL, COLOR_OPTIMO])
+                            y=['Costo_Real_Hora', 'Costo_Optimo_Hora'],
+                            color=[COLOR_REAL, COLOR_OPTIMO])
             st.info(f"El 'Ahorro Potencial Perdido' en este período fue de ${ahorro_potencial:,.2f}.")
             
             st.divider()
             
             st.subheader("Análisis de Merma (ML vs. Teórica)")
             st.line_chart(df_filtrado, 
-                          y=['sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'],
-                          color=[COLOR_MERMA_ML, COLOR_MERMA_TEO])
+                            y=['sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'],
+                            color=[COLOR_MERMA_ML, COLOR_MERMA_TEO])
             st.info(f"La 'Merma Operativa Extra' (diferencia entre ambas líneas) promedió {merma_extra_media:.3f}%.")
 
         # --- Pestaña 5: Datos Crudos ---

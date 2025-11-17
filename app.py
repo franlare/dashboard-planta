@@ -206,9 +206,7 @@ if data_loaded_successfully and not df.empty:
             with col1:
                 st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
 
-                # 1. Preparar datos para Altair (formato "largo")
-                # Es importante NO derretir las columnas si queremos gráficos individuales
-                # en lugar de apilados por defecto. Trabajaremos con el DataFrame original.
+                # 1. Preparar datos: Se mantiene el DataFrame original.
                 
                 # 2. Definir las capas para cada línea + área
                 
@@ -216,14 +214,16 @@ if data_loaded_successfully and not df.empty:
                 real_chart = alt.Chart(df_filtrado.reset_index()).mark_area(
                     interpolate='monotone',
                     line={'color': COLOR_REAL}, # Color de la línea
+                    # --- CORRECCIÓN AQUÍ: ELIMINAMOS OPACITY DE GRADIENTSTOP ---
                     color=alt.Gradient(
                         gradient='linear',
                         stops=[
-                            alt.GradientStop(color=COLOR_REAL, offset=0, opacity=0.4), # Sombra más opaca arriba
-                            alt.GradientStop(color='transparent', offset=1, opacity=0)  # Transparente abajo
+                            alt.GradientStop(color=COLOR_REAL, offset=0), 
+                            alt.GradientStop(color='transparent', offset=1)
                         ],
                         x1=1, x2=1, y1=1, y2=0 # Gradiente vertical (de arriba hacia abajo)
-                    )
+                    ),
+                    opacity=0.5 # <--- CONTROLAMOS LA OPACIDAD DE TODA EL ÁREA AQUÍ
                 ).encode(
                     x=alt.X('timestamp', title='Fecha'),
                     y=alt.Y('caudal_naoh_in', title='Caudal (L/h)'),
@@ -237,14 +237,16 @@ if data_loaded_successfully and not df.empty:
                 optimo_chart = alt.Chart(df_filtrado.reset_index()).mark_area(
                     interpolate='monotone',
                     line={'color': COLOR_OPTIMO}, # Color de la línea
+                    # --- CORRECCIÓN AQUÍ: ELIMINAMOS OPACITY DE GRADIENTSTOP ---
                     color=alt.Gradient(
                         gradient='linear',
                         stops=[
-                            alt.GradientStop(color=COLOR_OPTIMO, offset=0, opacity=0.08), # Sombra más tenue
-                            alt.GradientStop(color='transparent', offset=1, opacity=0)
+                            alt.GradientStop(color=COLOR_OPTIMO, offset=0), 
+                            alt.GradientStop(color='transparent', offset=1)
                         ],
                         x1=1, x2=1, y1=1, y2=0
-                    )
+                    ),
+                    opacity=0.3 # <--- CONTROLAMOS LA OPACIDAD DE TODA EL ÁREA AQUÍ
                 ).encode(
                     x=alt.X('timestamp', title='Fecha'),
                     y=alt.Y('opt_hibrida_naoh_Lh', title='Caudal (L/h)'),
@@ -254,20 +256,15 @@ if data_loaded_successfully and not df.empty:
                     ]
                 )
                 
-                # Para la leyenda, necesitamos un truco con datos "dummy" o combinando
-                # los charts con las líneas. La forma más sencilla para un look limpio
-                # es añadir solo las líneas a la leyenda con colores específicos.
-                
+                # Capas de línea y leyenda (sin cambios)
                 linea_real_para_leyenda = alt.Chart(df_filtrado.reset_index()).mark_line(
                     interpolate='monotone', color=COLOR_REAL
                 ).encode(
                     x='timestamp',
                     y='caudal_naoh_in',
-                    # Usamos `datum` para crear una entrada de leyenda fija
                     color=alt.value(COLOR_REAL),
-                    strokeDash=alt.value([1, 0]) # Línea sólida para leyenda
+                    strokeDash=alt.value([1, 0])
                 ).properties(
-                    # Nombre para la leyenda
                     title=alt.Title('Real (Naranja)', anchor='start', fontSize=12, color=COLOR_REAL)
                 )
 
@@ -277,17 +274,15 @@ if data_loaded_successfully and not df.empty:
                     x='timestamp',
                     y='opt_hibrida_naoh_Lh',
                     color=alt.value(COLOR_OPTIMO),
-                    strokeDash=alt.value([1, 0]) # Línea sólida para leyenda
+                    strokeDash=alt.value([1, 0])
                 ).properties(
-                    # Nombre para la leyenda
                     title=alt.Title('Óptimo (Azul)', anchor='start', fontSize=12, color=COLOR_OPTIMO)
                 )
 
                 # Combinar todas las capas (áreas y líneas)
-                # Asegúrate de que la línea "real" esté encima de la óptima si hay superposición
                 chart = alt.layer(
-                    optimo_chart, # Óptima abajo
-                    real_chart,   # Real encima
+                    optimo_chart, 
+                    real_chart,   
                     linea_optima_para_leyenda,
                     linea_real_para_leyenda
                 ).resolve_scale(
@@ -297,8 +292,6 @@ if data_loaded_successfully and not df.empty:
                 ).interactive()
                 
                 st.altair_chart(chart, use_container_width=True)
-                # --- ¡FIN DEL CAMBIO! ---
-
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
@@ -400,3 +393,4 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+

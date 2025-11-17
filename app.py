@@ -205,6 +205,7 @@ if data_loaded_successfully and not df.empty:
             
             col1, col2 = st.columns(2)
             with col1:
+                with col1:
                 # --- INICIO DEL CAMBIO: GRÁFICO DE SODA CON LÍNEAS CURVAS Y LIMPIAS ---
                 st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
 
@@ -229,14 +230,14 @@ if data_loaded_successfully and not df.empty:
 
                 # 3. Crear el gráfico de línea (sin área)
                 chart = alt.Chart(df_soda_chart).mark_line(
-                    interpolate='monotone', # <-- Líneas suaves y curvas
-                    strokeWidth=3           # <-- Hacemos la línea más gruesa
+                    interpolate='monotone', 
+                    strokeWidth=3           
                 ).encode(
                     x=alt.X('timestamp', title='Fecha'),
                     y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
                     color=alt.Color('Leyenda', scale=color_scale, 
                                     legend=alt.Legend(title="Dosificación", 
-                                                      **orient="right"**)), # <--- LEYENDA MOVIDA
+                                                      orient="right")), 
                     tooltip=[
                         alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
                         alt.Tooltip('Leyenda', title='Tipo'),
@@ -247,6 +248,7 @@ if data_loaded_successfully and not df.empty:
                 ).interactive()
                 
                 st.altair_chart(chart, use_container_width=True)
+                # --- FIN DEL CAMBIO ---
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
@@ -430,6 +432,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

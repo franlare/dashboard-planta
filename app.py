@@ -204,7 +204,7 @@ if data_loaded_successfully and not df.empty:
             col_m2.metric("Último Valor Óptimo (Soda)", f"{last_soda_opt:.2f} L/h")
             
             col1, col2 = st.columns(2)
-          with col1:
+            with col1:
                 # --- INICIO DEL CAMBIO: GRÁFICO DE SODA CON LÍNEAS CURVAS Y LIMPIAS ---
                 st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
 
@@ -430,6 +430,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

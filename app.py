@@ -3,234 +3,366 @@ import gspread
 import pandas as pd
 import numpy as np
 import altair as alt
+from datetime import datetime
 
 # -------------------------------------------------------------------
-# 1. CONFIGURACIÓN VISUAL (THEME COLIBRÍ - INTEGRADO)
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILO CSS (MODERN UI 2026)
 # -------------------------------------------------------------------
 st.set_page_config(
-    page_title="Dashboard Operativo | Colibrí",
-    page_icon="🐦",
+    page_title="Neural Plant Ops",
+    page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# PALETA COLIBRÍ REFINADA
-COLOR_PRIMARIO = "#2E7D32"      # Verde Bosque (Identidad)
-COLOR_ACCENT = "#76FF03"        # Verde Lima (IA/Highlights)
-COLOR_FONDO_CARD = "#F1F8E9"    # <--- NUEVO: Verde muy pálido (No más blanco duro)
-COLOR_BORDE_CARD = "#C5E1A5"    # Borde verde suave
-COLOR_TEXTO = "#1B5E20"         # Verde muy oscuro
-COLOR_ERROR = "#D32F2F"
+# Definición de Paleta "Cyber-Industrial"
+COLOR_REAL = "#FF6B35"       # Naranja vibrante (Acción)
+COLOR_OPTIMO = "#2D7DD2"     # Azul técnico (Referencia)
+COLOR_BG_CHART = "transparent"
+COLOR_TEXT_SEC = "#8D99AE"
 
-st.markdown(f"""
+# CSS Personalizado para Look & Feel Minimalista
+st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    /* Tipografía General - Fuente limpia */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     
-    html, body, [class*="css"] {{
+    html, body, [class*="css"]  {
         font-family: 'Inter', sans-serif;
-        color: {COLOR_TEXTO};
-    }}
+    }
     
-    /* --- ARREGLO DE LOS CUADROS BLANCOS --- */
-    div[data-testid="stMetric"] {{
-        background-color: {COLOR_FONDO_CARD}; /* Fondo verde suave */
-        border: 1px solid {COLOR_BORDE_CARD};
-        padding: 15px;
-        border-radius: 12px; /* Bordes más redondeados */
-        box-shadow: 0 2px 4px rgba(46, 125, 50, 0.1); /* Sombra sutil verdosa */
-    }}
+    /* Títulos y Métricas */
+    h1, h2, h3 {
+        font-weight: 600;
+        letter-spacing: -0.5px;
+    }
     
-    [data-testid="stMetricValue"] {{
-        color: {COLOR_PRIMARIO};
+    /* Estilo de Tarjetas de Métricas (KPI Cards) */
+    div[data-testid="stMetric"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 15px 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s ease;
+    }
+    
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.85rem;
+        color: #8D99AE;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-family: 'JetBrains Mono', monospace;
         font-size: 1.8rem;
         font-weight: 700;
-    }}
+    }
 
-    [data-testid="stMetricLabel"] {{
-        color: {COLOR_TEXTO};
-        opacity: 0.8;
-    }}
-    
-    /* --- PESTAÑAS MEJORADAS --- */
-    .stTabs [data-baseweb="tab-list"] {{
-        gap: 10px;
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        height: 45px;
-        background-color: {COLOR_FONDO_CARD}; /* Coherencia con las cards */
+    /* Ajuste de Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
         border-radius: 8px;
-        color: {COLOR_TEXTO};
-        font-weight: 600;
-        border: 1px solid {COLOR_BORDE_CARD};
-    }}
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {{
-        background-color: {COLOR_PRIMARIO};
-        color: white;
-        border: none;
-    }}
+        font-size: 0.9rem;
+        font-weight: 500;
+        padding: 0 16px;
+        background-color: transparent;
+        border: 1px solid transparent;
+    }
+
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: rgba(45, 125, 210, 0.1);
+        color: #2D7DD2;
+        border: 1px solid rgba(45, 125, 210, 0.3);
+    }
+
+    /* Remover Padding superior excesivo */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
     
-    /* Título principal con estilo */
-    h2 {{
-        color: {COLOR_PRIMARIO};
-        border-bottom: 3px solid {COLOR_ACCENT};
-        padding-bottom: 10px;
-        margin-bottom: 20px;
-    }}
     </style>
     """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. CARGA DE DATOS
+# 2. LÓGICA DE DATOS (Optimizada)
 # -------------------------------------------------------------------
+
 @st.cache_data(ttl=600)
 def cargar_datos():
     try:
-        creds = st.secrets.get("google_credentials")
-        if not creds: return pd.DataFrame(), False
+        creds_dict = st.secrets.get("google_credentials")
+        if not creds_dict:
+            return pd.DataFrame(), False
+            
+        gc = gspread.service_account_from_dict(creds_dict)
+        # Ajusta nombres según tu sheet real
+        spreadsheet = gc.open("Resultados_Planta")  
+        worksheet = spreadsheet.worksheet("Resultados_Hibridos_RF")  
+
+        data = worksheet.get_all_records()
+        df = pd.DataFrame(data)
+
+        columnas_numericas = [
+            'ffa_pct_in', 'fosforo_ppm_in', 'caudal_aceite_in',  
+            'caudal_acido_in', 'caudal_naoh_in', 'caudal_agua_in',  
+            'temperatura_in', 'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO',  
+            'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',  
+            'sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'  
+        ]
         
-        gc = gspread.service_account_from_dict(creds)
-        sh = gc.open("Resultados_Planta")
-        ws = sh.worksheet("Resultados_Hibridos_RF")
-        df = pd.DataFrame(ws.get_all_records())
-
-        if df.empty: return df, False
-
-        # Conversiones y limpieza
-        cols = ['caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh', 
-                'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L']
-        for c in cols:
-            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-
-        if 'Costo_Real_Hora' not in df.columns:
-            df['Costo_Real_Hora'] = (df['caudal_naoh_in'] * 0.5) + (df['caudal_agua_in'] * 0.1)
-        if 'Costo_Optimo_Hora' not in df.columns:
-            df['Costo_Optimo_Hora'] = (df['opt_hibrida_naoh_Lh'] * 0.5) + (df['opt_hibrida_agua_Lh'] * 0.1)
+        for col in columnas_numericas:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
 
         if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df['Horario'] = df['timestamp']
+            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+            df.set_index('timestamp', inplace=True)
+            df.sort_index(inplace=True) # Asegurar orden cronológico
+        else:
+            return pd.DataFrame(), False
 
+        df.dropna(inplace=True)
         return df, True
+
     except Exception as e:
-        st.error(f"Error técnico: {e}")
+        st.error(f"Error de conexión: {e}")
         return pd.DataFrame(), False
 
-df_raw, exito = cargar_datos()
+df, loaded = cargar_datos()
 
 # -------------------------------------------------------------------
-# 3. LÓGICA DE NEGOCIO
+# 3. SIDEBAR MINIMALISTA
 # -------------------------------------------------------------------
-if exito and not df_raw.empty:
-    st.sidebar.header("⚙️ Filtros")
-    min_d, max_d = df_raw['Horario'].min().to_pydatetime(), df_raw['Horario'].max().to_pydatetime()
-    fechas = st.sidebar.slider("Rango", min_value=min_d, max_value=max_d, value=(min_d, max_d), format="DD/MM HH:mm")
-    
-    df = df_raw[(df_raw['Horario'] >= fechas[0]) & (df_raw['Horario'] <= fechas[1])].copy()
-    
-    # Cálculos
-    ahorro = df['Costo_Real_Hora'].sum() - df['Costo_Optimo_Hora'].sum()
-    pct_ahorro = (ahorro / df['Costo_Real_Hora'].sum() * 100) if df['Costo_Real_Hora'].sum() > 0 else 0
-    
-    acidez = df['sim_acidez_HIBRIDA']
-    media, std = acidez.mean(), acidez.std()
-    usl, lsl = 0.045, 0.025
-    cpk = min((usl - media)/(3*std), (media - lsl)/(3*std)) if std > 0 else 0
-    
-    mae_sosa = (df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']).abs().mean()
 
-else:
-    df = pd.DataFrame()
+if loaded and not df.empty:
+    with st.sidebar:
+        st.markdown("### 🎛️ Control Center")
+        
+        # Filtros de Fecha Compactos
+        min_date = df.index.min().date()
+        max_date = df.index.max().date()
+        
+        date_range = st.date_input(
+            "Periodo de Análisis",
+            (min_date, max_date),
+            min_value=min_date,
+            max_value=max_date
+        )
+        
+        if len(date_range) == 2:
+            start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
+        else:
+            start_date, end_date = pd.to_datetime(min_date), pd.to_datetime(max_date)
 
-# -------------------------------------------------------------------
-# 4. DASHBOARD VISUAL
-# -------------------------------------------------------------------
-if not df.empty:
+        st.markdown("---")
+        st.markdown("### ⚙️ Specs")
+        
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            usl = st.number_input("Max Acidez", 0.045, format="%.3f", step=0.001)
+            lsl = st.number_input("Min Acidez", 0.025, format="%.3f", step=0.001)
+        with col_s2:
+            costo_soda = st.number_input("Costo Soda", 0.5, format="%.2f")
+            costo_agua = st.number_input("Costo Agua", 0.1, format="%.2f")
+            
+    # Filtrado
+    df_f = df[(df.index >= start_date) & (df.index <= end_date)].copy()
+
+    # -------------------------------------------------------------------
+    # 4. HEADER & KPI DASHBOARD (HEADS-UP DISPLAY)
+    # -------------------------------------------------------------------
     
-    st.markdown("<h2>🐦 Aceitera Colibrí | Dashboard Híbrido</h2>", unsafe_allow_html=True)
+    # Cálculos Rápidos
+    df_f['Costo_Real'] = (df_f['caudal_naoh_in'] * costo_soda) + (df_f['caudal_agua_in'] * costo_agua)
+    df_f['Costo_Opt'] = (df_f['opt_hibrida_naoh_Lh'] * costo_soda) + (df_f['opt_hibrida_agua_Lh'] * costo_agua)
+    ahorro = (df_f['Costo_Real'] - df_f['Costo_Opt']).sum()
     
-    # KPI CARDS (Ahora con fondo verde suave)
+    acidez = df_f['sim_acidez_HIBRIDA']
+    sigma = acidez.std()
+    mu = acidez.mean()
+    cpk = min((usl - mu)/(3*sigma), (mu - lsl)/(3*sigma)) if sigma > 0 else 0
+    
+    merma_extra = (df_f['sim_merma_ML_TOTAL'] - df_f['sim_merma_TEORICA_L']).mean()
+
+    # Encabezado
+    col_h1, col_h2 = st.columns([3, 1])
+    with col_h1:
+        st.title("Neutralización // Dashboard Operativo")
+        st.markdown(f"<span style='color:{COLOR_TEXT_SEC}'>Última actualización: {datetime.now().strftime('%H:%M:%S')} • {len(df_f)} muestras analizadas</span>", unsafe_allow_html=True)
+    with col_h2:
+        # Espacio para un botón de acción o estado del sistema
+        st.caption("🟢 Sistema En Línea")
+
+    st.markdown("---")
+
+    # KPIs Principales (Estilo Tarjetas)
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Ahorro Detectado", f"${ahorro:,.0f}", f"{pct_ahorro:.1f}%")
     
-    cpk_delta = "Óptimo" if cpk > 1.33 else "Revisar"
-    cpk_col = "normal" if cpk > 1.33 else "inverse"
-    k2.metric("Calidad (Cpk)", f"{cpk:.2f}", cpk_delta, delta_color=cpk_col)
+    k1.metric(
+        "Eficiencia de Costos (Gap)",
+        f"-${ahorro:,.0f}",
+        delta="Pérdida Operativa" if ahorro > 0 else "Óptimo",
+        delta_color="inverse"
+    )
     
-    k3.metric("Error Seguimiento", f"{mae_sosa:.2f} L/h", "Sosa Caústica", delta_color="off")
-    k4.metric("Datos Procesados", f"{len(df)}", "Registros")
+    k2.metric(
+        "Capacidad (Cpk)",
+        f"{cpk:.2f}",
+        delta="Estable" if cpk > 1.33 else "Revisar Proceso",
+        delta_color="normal" if cpk > 1.33 else "inverse"
+    )
     
-    st.markdown("###")
+    k3.metric(
+        "Merma Extra (ML)",
+        f"{merma_extra:.3f}%",
+        delta="Sobre Teórico",
+        delta_color="off"
+    )
+    
+    # Última acidez registrada
+    last_acidez = acidez.iloc[-1] if not acidez.empty else 0
+    k4.metric(
+        "Acidez Final (Live)",
+        f"{last_acidez:.3f}%",
+        delta=f"{last_acidez - mu:.3f} vs Avg",
+        delta_color="off"
+    )
 
-    # PESTAÑAS
-    tab_fin, tab_brain, tab_qual, tab_ops = st.tabs([
-        "💰 Finanzas", "🧠 Inteligencia IA", "🧪 Calidad", "⚙️ Operación"
+    st.markdown("### ") # Espaciador
+
+    # -------------------------------------------------------------------
+    # 5. PESTAÑAS DE ANÁLISIS VISUAL
+    # -------------------------------------------------------------------
+    
+    tab_control, tab_calidad, tab_costos, tab_data = st.tabs([
+        "🎛️ Control de Dosificación", "⚗️ Calidad de Producto", "💰 Finanzas", "📋 Raw Data"
     ])
 
-    # --- TAB 1: FINANZAS ---
-    with tab_fin:
-        df_cost = df.melt('Horario', value_vars=['Costo_Real_Hora', 'Costo_Optimo_Hora'], var_name='Tipo', value_name='Valor')
-        df_cost['Tipo'] = df_cost['Tipo'].replace({'Costo_Real_Hora': 'Actual (Operador)', 'Costo_Optimo_Hora': 'Objetivo (IA)'})
+    # --- FUNCION HELPER PARA GRAFICOS ALTAIR MODERNOS ---
+    def make_modern_chart(data, y_real, y_opt, title, y_label, color_real, color_opt):
+        base = alt.Chart(data.reset_index()).encode(x=alt.X('timestamp', axis=alt.Axis(title=None, format='%H:%M', grid=False)))
         
-        # Gráfico de Área Suave
-        chart = alt.Chart(df_cost).mark_area(interpolate='monotone', opacity=0.5).encode(
-            x=alt.X('Horario:T', axis=alt.Axis(format='%H:%M', title='')),
-            y=alt.Y('Valor', title='Costo ($/h)'),
-            color=alt.Color('Tipo', scale=alt.Scale(domain=['Actual (Operador)', 'Objetivo (IA)'], range=[COLOR_PRIMARIO, COLOR_ACCENT])),
-            tooltip=['Horario', 'Tipo', 'Valor']
+        # Área degradada para el valor Real (Look moderno)
+        area_real = base.mark_area(
+            line={'color': color_real},
+            color=alt.Gradient(
+                gradient='linear',
+                stops=[alt.GradientStop(color=color_real, offset=0),
+                       alt.GradientStop(color='white', offset=1)],
+                x1=1, x2=1, y1=1, y2=0
+            ),
+            opacity=0.5
+        ).encode(y=alt.Y(y_real, title=y_label, axis=alt.Axis(grid=False)))
+        
+        # Línea sólida para el valor Óptimo
+        line_opt = base.mark_line(
+            color=color_opt,
+            strokeDash=[5, 5],
+            strokeWidth=2
+        ).encode(y=alt.Y(y_opt))
+        
+        # Tooltips combinados
+        chart = (area_real + line_opt).properties(
+            height=250,
+            title=alt.TitleParams(text=title, font='Inter', fontSize=14, color=COLOR_TEXT_SEC)
+        ).interactive()
+        
+        return chart
+
+    with tab_control:
+        col_c1, col_c2 = st.columns(2)
+        
+        with col_c1:
+            st.markdown("##### Soda Cáustica (NaOH)")
+            chart_soda = make_modern_chart(
+                df_f, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', 
+                "", "L/h", COLOR_REAL, COLOR_OPTIMO
+            )
+            st.altair_chart(chart_soda, use_container_width=True)
+            
+            # Mini indicador de error
+            err_soda = (df_f['caudal_naoh_in'] - df_f['opt_hibrida_naoh_Lh']).mean()
+            st.caption(f"Desviación media: **{err_soda:.2f} L/h**")
+
+        with col_c2:
+            st.markdown("##### Agua de Proceso")
+            chart_agua = make_modern_chart(
+                df_f, 'caudal_agua_in', 'opt_hibrida_agua_Lh', 
+                "", "L/h", "#00A8E8", COLOR_OPTIMO
+            )
+            st.altair_chart(chart_agua, use_container_width=True)
+            
+            err_agua = (df_f['caudal_agua_in'] - df_f['opt_hibrida_agua_Lh']).mean()
+            st.caption(f"Desviación media: **{err_agua:.2f} L/h**")
+
+    with tab_calidad:
+        c_q1, c_q2 = st.columns([2, 1])
+        
+        with c_q1:
+            st.markdown("##### Evolución de Acidez")
+            # Gráfico de Acidez con banda de límites
+            base_acid = alt.Chart(df_f.reset_index()).encode(x='timestamp')
+            line_acid = base_acid.mark_line(color="#2A9D8F", strokeWidth=2).encode(
+                y=alt.Y('sim_acidez_HIBRIDA', title='% FFA', scale=alt.Scale(domain=[lsl*0.8, usl*1.2]))
+            )
+            
+            # Bandas de especificación
+            rule_u = base_acid.mark_rule(color='red', strokeDash=[2,2]).encode(y=alt.datum(usl))
+            rule_l = base_acid.mark_rule(color='red', strokeDash=[2,2]).encode(y=alt.datum(lsl))
+            
+            st.altair_chart((line_acid + rule_u + rule_l).interactive(), use_container_width=True)
+            
+        with c_q2:
+            st.markdown("##### Histograma")
+            # Histograma simple y limpio
+            hist = alt.Chart(df_f).mark_bar(color="#2A9D8F", opacity=0.7).encode(
+                x=alt.X('sim_acidez_HIBRIDA', bin=alt.Bin(maxbins=20), title='% FFA'),
+                y=alt.Y('count()', title=None)
+            ).properties(height=300)
+            st.altair_chart(hist, use_container_width=True)
+
+    with tab_costos:
+        st.markdown("##### Acumulación de Costos (Real vs Óptimo)")
+        
+        # Gráfico acumulativo para ver la divergencia
+        df_f['cum_real'] = df_f['Costo_Real'].cumsum()
+        df_f['cum_opt'] = df_f['Costo_Opt'].cumsum()
+        
+        chart_cum = alt.Chart(df_f.reset_index()).mark_line().encode(
+            x='timestamp',
+            y='value',
+            color='variable'
+        ).transform_fold(
+            ['cum_real', 'cum_opt']
         ).properties(height=350)
         
-        st.altair_chart(chart.interactive(), use_container_width=True)
+        st.altair_chart(chart_cum, use_container_width=True)
 
-    # --- TAB 2: INTELIGENCIA (BIAS) ---
-    with tab_brain:
-        c1, c2 = st.columns([2,1])
-        with c1:
-            st.subheader("Mapa de Decisión")
-            min_v = min(df['caudal_naoh_in'].min(), df['opt_hibrida_naoh_Lh'].min())
-            max_v = max(df['caudal_naoh_in'].max(), df['opt_hibrida_naoh_Lh'].max())
-            
-            scatter = alt.Chart(df).mark_circle(size=70, color=COLOR_PRIMARIO, opacity=0.6).encode(
-                x=alt.X('caudal_naoh_in', title='Operador (L/h)', scale=alt.Scale(domain=[min_v, max_v])),
-                y=alt.Y('opt_hibrida_naoh_Lh', title='IA (L/h)', scale=alt.Scale(domain=[min_v, max_v])),
-                tooltip=['Horario', 'caudal_naoh_in', 'opt_hibrida_naoh_Lh']
-            )
-            line = alt.Chart(pd.DataFrame({'x': [min_v, max_v]})).mark_rule(color='gray', strokeDash=[4,4]).encode(x='x', y='x')
-            st.altair_chart((scatter + line).properties(height=400), use_container_width=True)
-        
-        with c2:
-            st.info("Los puntos alejados de la línea punteada indican momentos donde la IA propuso una mejora activa frente a la operación manual.")
-
-    # --- TAB 3: CALIDAD ---
-    with tab_qual:
-        col_q1, col_q2 = st.columns(2)
-        with col_q1:
-            st.subheader("Histograma de Acidez")
-            base = alt.Chart(df).mark_bar(color=COLOR_PRIMARIO, opacity=0.8).encode(
-                x=alt.X('sim_acidez_HIBRIDA', bin=alt.Bin(maxbins=25), title='Acidez (%FFA)'),
-                y='count()'
-            )
-            st.altair_chart(base.properties(height=300), use_container_width=True)
-        
-        with col_q2:
-            st.subheader("Tendencia de Jabones")
-            line_j = alt.Chart(df).mark_line(interpolate='monotone', color='#8D6E63').encode( # Marrón suave
-                x=alt.X('Horario:T', axis=alt.Axis(format='%H:%M')),
-                y=alt.Y('sim_jabones_HIBRIDO', title='ppm')
-            ).properties(height=300)
-            st.altair_chart(line_j, use_container_width=True)
-
-    # --- TAB 4: OPERACIÓN ---
-    with tab_ops:
-        st.subheader("Detalle de Dosificación (Sosa Cáustica)")
-        df_sosa = df.melt('Horario', value_vars=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'], var_name='Origen', value_name='Lh')
-        df_sosa['Origen'] = df_sosa['Origen'].replace({'caudal_naoh_in': 'Real', 'opt_hibrida_naoh_Lh': 'IA'})
-        
-        chart_s = alt.Chart(df_sosa).mark_line(interpolate='monotone', strokeWidth=2).encode(
-            x=alt.X('Horario:T', axis=alt.Axis(format='%H:%M')),
-            y='Lh',
-            color=alt.Color('Origen', scale=alt.Scale(range=[COLOR_PRIMARIO, COLOR_ACCENT]))
-        ).properties(height=300)
-        st.altair_chart(chart_s.interactive(), use_container_width=True)
+    with tab_data:
+        st.dataframe(
+            df_f.style.highlight_max(axis=0, color='#ffcccc'), 
+            use_container_width=True,
+            height=400
+        )
 
 else:
-    st.warning("⏳ Conectando con base de datos...")
+    # Pantalla de Estado Vacío Minimalista
+    st.container()
+    st.markdown("""
+        <div style="text-align: center; padding: 50px; color: #666;">
+            <h3>💤 Esperando Datos</h3>
+            <p>Conecta la fuente de datos o ajusta los filtros de fecha.</p>
+        </div>
+    """, unsafe_allow_html=True)

@@ -253,13 +253,13 @@ if data_loaded_successfully and not df.empty:
                                 y=['Error_Dosificacion_Soda', 'Zero_Line'],
                                 color=[COLOR_ERROR, COLOR_ZERO])
 
-            st.divider()
-            
-            st.subheader("Análisis de Error: Dosificación de Agua")
-            
-            col_m3, col_m4 = st.columns(2)
-            col_m3.metric("Último Valor Real (Agua)", f"{last_agua_real:.2f} L/h")
-            col_m4.metric("Último Valor Óptimo (Agua)", f"{last_agua_opt:.2f} L/h")
+                st.divider()
+                
+                st.subheader("Análisis de Error: Dosificación de Agua")
+                
+                col_m3, col_m4 = st.columns(2)
+                col_m3.metric("Último Valor Real (Agua)", f"{last_agua_real:.2f} L/h")
+                col_m4.metric("Último Valor Óptimo (Agua)", f"{last_agua_opt:.2f} L/h")
             
             col3, col4 = st.columns(2)
             with col3:
@@ -442,6 +442,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

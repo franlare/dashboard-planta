@@ -336,17 +336,42 @@ if loaded and not df.empty:
     with tab_costos:
         st.markdown("##### Acumulación de Costos (Real vs Óptimo)")
         
-        # Gráfico acumulativo para ver la divergencia
+        # 1. Calcular acumulados
         df_f['cum_real'] = df_f['Costo_Real'].cumsum()
         df_f['cum_opt'] = df_f['Costo_Opt'].cumsum()
         
-        chart_cum = alt.Chart(df_f.reset_index()).mark_line().encode(
-            x='timestamp',
-            y='value',
-            color='variable'
-        ).transform_fold(
-            ['cum_real', 'cum_opt']
-        ).properties(height=350)
+        # 2. Transformar datos a formato largo (Long Format) con Pandas
+        # Esto evita el error de Altair transform_fold
+        df_cum = df_f.reset_index().melt(
+            id_vars=['timestamp'],
+            value_vars=['cum_real', 'cum_opt'],
+            var_name='Tipo_Costo',
+            value_name='Costo_Acumulado'
+        )
+        
+        # 3. Renombrar para que la leyenda se vea bonita
+        df_cum['Tipo_Costo'] = df_cum['Tipo_Costo'].replace({
+            'cum_real': 'Real (Acumulado)', 
+            'cum_opt': 'Óptimo (Acumulado)'
+        })
+
+        # 4. Crear el gráfico corregido
+        chart_cum = alt.Chart(df_cum).mark_line(strokeWidth=3).encode(
+            x=alt.X('timestamp', title=None, axis=alt.Axis(format='%H:%M', grid=False)),
+            y=alt.Y('Costo_Acumulado', title='Costo Acumulado ($)', axis=alt.Axis(grid=False)),
+            color=alt.Color('Tipo_Costo', 
+                            scale=alt.Scale(domain=['Real (Acumulado)', 'Óptimo (Acumulado)'], 
+                                            range=[COLOR_REAL, COLOR_OPTIMO]),
+                            legend=alt.Legend(title=None, orient="bottom")),
+            tooltip=[
+                alt.Tooltip('timestamp', format='%H:%M', title='Hora'),
+                alt.Tooltip('Tipo_Costo', title='Tipo'),
+                alt.Tooltip('Costo_Acumulado', format='$,.2f')
+            ]
+        ).properties(
+            height=350,
+            title=alt.TitleParams(text="Divergencia de Costos", font='Inter', fontSize=14, color=COLOR_TEXT_SEC)
+        ).interactive()
         
         st.altair_chart(chart_cum, use_container_width=True)
 
@@ -366,3 +391,4 @@ else:
             <p>Conecta la fuente de datos o ajusta los filtros de fecha.</p>
         </div>
     """, unsafe_allow_html=True)
+

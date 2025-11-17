@@ -204,53 +204,97 @@ if data_loaded_successfully and not df.empty:
             
             col1, col2 = st.columns(2)
             with col1:
-                # --- ¡INICIO DEL CAMBIO! GRÁFICO DE SODA CON ALTAIR ---
                 st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
 
                 # 1. Preparar datos para Altair (formato "largo")
-                df_soda_chart = df_filtrado.reset_index().melt(
-                    id_vars=['timestamp'], 
-                    value_vars=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
-                    var_name='Leyenda',
-                    value_name='Caudal (L/h)'
-                )
+                # Es importante NO derretir las columnas si queremos gráficos individuales
+                # en lugar de apilados por defecto. Trabajaremos con el DataFrame original.
                 
-                # Renombrar para leyenda amigable
-                df_soda_chart['Leyenda'] = df_soda_chart['Leyenda'].replace({
-                    'caudal_naoh_in': 'Real (Naranja)',
-                    'opt_hibrida_naoh_Lh': 'Óptimo (Azul)'
-                })
+                # 2. Definir las capas para cada línea + área
                 
-                # 2. Definir la escala de colores
-                domain_ = ['Real (Naranja)', 'Óptimo (Azul)']
-                range_ = [COLOR_REAL, COLOR_OPTIMO]
-                color_scale = alt.Scale(domain=domain_, range=range_)
-
-                # 3. Gráfico base
-                base = alt.Chart(df_soda_chart).encode(
+                # Capa para "Real (Naranja)"
+                real_chart = alt.Chart(df_filtrado.reset_index()).mark_area(
+                    interpolate='monotone',
+                    line={'color': COLOR_REAL}, # Color de la línea
+                    color=alt.Gradient(
+                        gradient='linear',
+                        stops=[
+                            alt.GradientStop(color=COLOR_REAL, offset=0, opacity=0.4), # Sombra más opaca arriba
+                            alt.GradientStop(color='transparent', offset=1, opacity=0)  # Transparente abajo
+                        ],
+                        x1=1, x2=1, y1=1, y2=0 # Gradiente vertical (de arriba hacia abajo)
+                    )
+                ).encode(
                     x=alt.X('timestamp', title='Fecha'),
-                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
-                    color=alt.Color('Leyenda', scale=color_scale, legend=alt.Legend(title="Dosificación")),
+                    y=alt.Y('caudal_naoh_in', title='Caudal (L/h)'),
                     tooltip=[
                         alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
-                        alt.Tooltip('Leyenda', title='Tipo'),
-                        alt.Tooltip('Caudal (L/h)', format='.2f')
+                        alt.Tooltip('caudal_naoh_in', title='Real (L/h)', format='.2f')
                     ]
                 )
 
-                # 4. Capa de Área (Relleno con transparencia y curva)
-                area_layer = base.mark_area(
-                    interpolate='monotone', # <-- ¡Línea curva!
-                    fillOpacity=0.3         # Transparencia
+                # Capa para "Óptimo (Azul)"
+                optimo_chart = alt.Chart(df_filtrado.reset_index()).mark_area(
+                    interpolate='monotone',
+                    line={'color': COLOR_OPTIMO}, # Color de la línea
+                    color=alt.Gradient(
+                        gradient='linear',
+                        stops=[
+                            alt.GradientStop(color=COLOR_OPTIMO, offset=0, opacity=0.08), # Sombra más tenue
+                            alt.GradientStop(color='transparent', offset=1, opacity=0)
+                        ],
+                        x1=1, x2=1, y1=1, y2=0
+                    )
+                ).encode(
+                    x=alt.X('timestamp', title='Fecha'),
+                    y=alt.Y('opt_hibrida_naoh_Lh', title='Caudal (L/h)'),
+                    tooltip=[
+                        alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
+                        alt.Tooltip('opt_hibrida_naoh_Lh', title='Óptimo (L/h)', format='.2f')
+                    ]
+                )
+                
+                # Para la leyenda, necesitamos un truco con datos "dummy" o combinando
+                # los charts con las líneas. La forma más sencilla para un look limpio
+                # es añadir solo las líneas a la leyenda con colores específicos.
+                
+                linea_real_para_leyenda = alt.Chart(df_filtrado.reset_index()).mark_line(
+                    interpolate='monotone', color=COLOR_REAL
+                ).encode(
+                    x='timestamp',
+                    y='caudal_naoh_in',
+                    # Usamos `datum` para crear una entrada de leyenda fija
+                    color=alt.value(COLOR_REAL),
+                    strokeDash=alt.value([1, 0]) # Línea sólida para leyenda
+                ).properties(
+                    # Nombre para la leyenda
+                    title=alt.Title('Real (Naranja)', anchor='start', fontSize=12, color=COLOR_REAL)
                 )
 
-                # 5. Capa de Línea (Curva)
-                line_layer = base.mark_line(
-                    interpolate='monotone' # <-- ¡Línea curva!
+                linea_optima_para_leyenda = alt.Chart(df_filtrado.reset_index()).mark_line(
+                    interpolate='monotone', color=COLOR_OPTIMO
+                ).encode(
+                    x='timestamp',
+                    y='opt_hibrida_naoh_Lh',
+                    color=alt.value(COLOR_OPTIMO),
+                    strokeDash=alt.value([1, 0]) # Línea sólida para leyenda
+                ).properties(
+                    # Nombre para la leyenda
+                    title=alt.Title('Óptimo (Azul)', anchor='start', fontSize=12, color=COLOR_OPTIMO)
                 )
 
-                # 6. Combinar y mostrar
-                chart = (area_layer + line_layer).interactive() # .interactive() para zoom
+                # Combinar todas las capas (áreas y líneas)
+                # Asegúrate de que la línea "real" esté encima de la óptima si hay superposición
+                chart = alt.layer(
+                    optimo_chart, # Óptima abajo
+                    real_chart,   # Real encima
+                    linea_optima_para_leyenda,
+                    linea_real_para_leyenda
+                ).resolve_scale(
+                    y='shared'
+                ).properties(
+                    title='Seguimiento Real vs. Óptimo (Caudal de Soda)'
+                ).interactive()
                 
                 st.altair_chart(chart, use_container_width=True)
                 # --- ¡FIN DEL CAMBIO! ---

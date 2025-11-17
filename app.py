@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 import pandas as pd
 import numpy as np
+import altair as alt # <-- ¡NUEVO! IMPORTACIÓN AÑADIDA
 
 # -------------------------------------------------------------------
 # 1. AUTENTICACIÓN Y ACCESO A GOOGLE SHEETS
@@ -95,11 +96,9 @@ if data_loaded_successfully and not df.empty:
     usl = st.sidebar.number_input("Acidez - Límite Superior (USL)", value=0.045, format="%.3f")
     lsl = st.sidebar.number_input("Acidez - Límite Inferior (LSL)", value=0.025, format="%.3f")
     
-    # --- ¡CAMBIO 1! Añadidos límites para jabones ---
     st.sidebar.markdown("---")
     usl_jabones = st.sidebar.number_input("Jabones - Límite Superior (USL)", value=150)
     lsl_jabones = st.sidebar.number_input("Jabones - Límite Inferior (LSL)", value=125)
-    # --- FIN CAMBIO 1 ---
 
     st.sidebar.header("Costos de Insumos")
     costo_soda = st.sidebar.number_input("Costo Soda ($/L)", value=0.5, format="%.2f")
@@ -148,13 +147,12 @@ if data_loaded_successfully and not df.empty:
         df_filtrado['Merma_Extra_ML'] = df_filtrado['sim_merma_ML_TOTAL'] - df_filtrado['sim_merma_TEORICA_L']
         merma_extra_media = df_filtrado['Merma_Extra_ML'].mean()
         
-        # --- ¡NUEVO! OBTENER ÚLTIMOS VALORES ---
+        # --- OBTENER ÚLTIMOS VALORES ---
         last_row = df_filtrado.iloc[-1]
         last_soda_real = last_row['caudal_naoh_in']
         last_soda_opt = last_row['opt_hibrida_naoh_Lh']
         last_agua_real = last_row['caudal_agua_in']
         last_agua_opt = last_row['opt_hibrida_agua_Lh']
-        # --- FIN NUEVO ---
         
         # -------------------------------------------------
         # ¡NUEVO DISEÑO CON PESTAÑAS!
@@ -200,18 +198,63 @@ if data_loaded_successfully and not df.empty:
         with tab2:
             st.subheader("Análisis de Error: Dosificación de Soda")
             
-            # --- ¡NUEVO! MÉTRICAS ÚLTIMO VALOR SODA ---
             col_m1, col_m2 = st.columns(2)
             col_m1.metric("Último Valor Real (Soda)", f"{last_soda_real:.2f} L/h")
             col_m2.metric("Último Valor Óptimo (Soda)", f"{last_soda_opt:.2f} L/h")
-            # --- FIN NUEVO ---
             
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("##### Seguimiento Real (Naranja) vs. Óptimo (Azul)")
-                st.line_chart(df_filtrado, 
-                                y=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
-                                color=[COLOR_REAL, COLOR_OPTIMO])
+                # --- ¡INICIO DEL CAMBIO! GRÁFICO DE SODA CON ALTAIR ---
+                st.markdown("##### Seguimiento Real vs. Óptimo (Estilo Moderno)")
+
+                # 1. Preparar datos para Altair (formato "largo")
+                df_soda_chart = df_filtrado.reset_index().melt(
+                    id_vars=['timestamp'], 
+                    value_vars=['caudal_naoh_in', 'opt_hibrida_naoh_Lh'],
+                    var_name='Leyenda',
+                    value_name='Caudal (L/h)'
+                )
+                
+                # Renombrar para leyenda amigable
+                df_soda_chart['Leyenda'] = df_soda_chart['Leyenda'].replace({
+                    'caudal_naoh_in': 'Real (Naranja)',
+                    'opt_hibrida_naoh_Lh': 'Óptimo (Azul)'
+                })
+                
+                # 2. Definir la escala de colores
+                domain_ = ['Real (Naranja)', 'Óptimo (Azul)']
+                range_ = [COLOR_REAL, COLOR_OPTIMO]
+                color_scale = alt.Scale(domain=domain_, range=range_)
+
+                # 3. Gráfico base
+                base = alt.Chart(df_soda_chart).encode(
+                    x=alt.X('timestamp', title='Fecha'),
+                    y=alt.Y('Caudal (L/h)', title='Caudal (L/h)'),
+                    color=alt.Color('Leyenda', scale=color_scale, legend=alt.Legend(title="Dosificación")),
+                    tooltip=[
+                        alt.Tooltip('timestamp', title='Fecha', format='%Y-%m-%d %H:%M'),
+                        alt.Tooltip('Leyenda', title='Tipo'),
+                        alt.Tooltip('Caudal (L/h)', format='.2f')
+                    ]
+                )
+
+                # 4. Capa de Área (Relleno con transparencia y curva)
+                area_layer = base.mark_area(
+                    interpolate='monotone', # <-- ¡Línea curva!
+                    fillOpacity=0.3         # Transparencia
+                )
+
+                # 5. Capa de Línea (Curva)
+                line_layer = base.mark_line(
+                    interpolate='monotone' # <-- ¡Línea curva!
+                )
+
+                # 6. Combinar y mostrar
+                chart = (area_layer + line_layer).interactive() # .interactive() para zoom
+                
+                st.altair_chart(chart, use_container_width=True)
+                # --- ¡FIN DEL CAMBIO! ---
+
             with col2:
                 st.markdown("##### Gráfico de Residuos (Error) Soda")
                 st.line_chart(df_filtrado, 
@@ -222,11 +265,9 @@ if data_loaded_successfully and not df.empty:
             
             st.subheader("Análisis de Error: Dosificación de Agua")
             
-            # --- ¡NUEVO! MÉTRICAS ÚLTIMO VALOR AGUA ---
             col_m3, col_m4 = st.columns(2)
             col_m3.metric("Último Valor Real (Agua)", f"{last_agua_real:.2f} L/h")
             col_m4.metric("Último Valor Óptimo (Agua)", f"{last_agua_opt:.2f} L/h")
-            # --- FIN NUEVO ---
             
             col3, col4 = st.columns(2)
             with col3:
@@ -248,20 +289,16 @@ if data_loaded_successfully and not df.empty:
                 st.markdown("##### Acidez Final Simulada (Híbrida)")
                 st.line_chart(df_filtrado, y='sim_acidez_HIBRIDA', color=[COLOR_ACIDEZ])
             with col2:
-                # --- ¡CAMBIO 2! Histograma con Bins Fijos ---
                 st.markdown("##### Distribución de Acidez Final")
-                # 21 bordes = 20 bins fijos entre LSL y USL
                 bins_acidez = np.linspace(lsl, usl, num=21) 
                 hist_acidez, _ = np.histogram(acidez_data, bins=bins_acidez)
                 
-                # Crear etiquetas legibles para el eje X
                 bin_labels_acidez = [f"{edge:.3f}" for edge in bins_acidez[:-1]]
                 
                 hist_df_acidez = pd.DataFrame(hist_acidez, index=bin_labels_acidez)
                 hist_df_acidez.index.name = "Acidez (%FFA)"
                 
                 st.bar_chart(hist_df_acidez, color=[COLOR_ACIDEZ])
-                # --- FIN CAMBIO 2 ---
 
             st.markdown("##### Gráfico de Control de Acidez (SPC)")
             spc_df = pd.DataFrame({
@@ -280,22 +317,18 @@ if data_loaded_successfully and not df.empty:
                 st.markdown("##### Jabones Simulados (Híbrido)")
                 st.line_chart(df_filtrado, y='sim_jabones_HIBRIDO', color=[COLOR_JABONES])
             with col4:
-                # --- ¡CAMBIO 3! Histograma con Bins Fijos ---
                 st.markdown("##### Distribución de Jabones")
-                # 21 bordes = 20 bins fijos entre LSL y USL de jabones
                 bins_jabon = np.linspace(lsl_jabones, usl_jabones, num=21) 
                 hist_jabon, _ = np.histogram(
                     df_filtrado['sim_jabones_HIBRIDO'].dropna(), bins=bins_jabon
                 )
                 
-                # Crear etiquetas legibles para el eje X
                 bin_labels_jabon = [f"{edge:.1f}" for edge in bins_jabon[:-1]]
                 
                 hist_df_jabon = pd.DataFrame(hist_jabon, index=bin_labels_jabon)
                 hist_df_jabon.index.name = "Jabones (ppm)"
 
                 st.bar_chart(hist_df_jabon, color=[COLOR_JABONES])
-                # --- FIN CAMBIO 3 ---
         
         # --- Pestaña 4: Costos y Merma ---
         with tab4:

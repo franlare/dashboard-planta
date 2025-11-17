@@ -297,6 +297,9 @@ if data_loaded_successfully and not df.empty:
                         alt.Tooltip('Caudal (L/h)', format='.2f')
                     ]
                 ).properties(
+                        title=alt.Title('Seguimiento Real vs. Óptimo (Caudal de Soda)', anchor='start')
+                    ).interactive()
+                                        
                 st.altair_chart(chart_agua, use_container_width=True)
                 # --- FIN DEL CAMBIO ---
             with col4:
@@ -404,6 +407,8 @@ if data_loaded_successfully and not df.empty:
                     alt.Tooltip('Costo ($/Hora)', format='$.2f')
                 ]
             ).properties(
+                    title=alt.Title('Seguimiento Real vs. Óptimo (Caudal de Agua)', anchor='start')
+                ).interactive()
                 title=alt.Title('Seguimiento de Costos por Hora', anchor='start')
             ).interactive()
             
@@ -438,6 +443,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

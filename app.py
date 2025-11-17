@@ -250,34 +250,39 @@ if loaded and not df.empty:
         "🎛️ Control de Dosificación", "⚗️ Calidad de Producto", "💰 Finanzas", "📋 Raw Data"
     ])
 
-    # --- FUNCION HELPER PARA GRAFICOS ALTAIR MODERNOS ---
-    def make_modern_chart(data, y_real, y_opt, title, y_label, color_real, color_opt):
-        base = alt.Chart(data.reset_index()).encode(x=alt.X('timestamp', axis=alt.Axis(title=None, format='%H:%M', grid=False)))
+    # --- FUNCION HELPER MEJORADA (PRIORIDAD: LEGIBILIDAD) ---
+    def make_readable_chart(data, y_real, y_opt, title, y_label, color_real, color_opt):
+        base = alt.Chart(data.reset_index()).encode(
+            x=alt.X('timestamp', 
+                    axis=alt.Axis(title=None, format='%H:%M', grid=True, gridOpacity=0.3))
+        )
         
-        # Área degradada para el valor Real (Look moderno)
-        area_real = base.mark_area(
-            line={'color': color_real},
-            color=alt.Gradient(
-                gradient='linear',
-                stops=[alt.GradientStop(color=color_real, offset=0),
-                       alt.GradientStop(color='white', offset=1)],
-                x1=1, x2=1, y1=1, y2=0
-            ),
-            opacity=0.5
-        ).encode(y=alt.Y(y_real, title=y_label, axis=alt.Axis(grid=False)))
+        # 1. Línea Real (Sólida y Fuerte)
+        line_real = base.mark_line(
+            color=color_real,
+            strokeWidth=3,  # Más gruesa para destacar
+            opacity=0.9
+        ).encode(
+            y=alt.Y(y_real, 
+                    title=y_label, 
+                    # ESTO ES CLAVE: zero=False hace "zoom" en los datos
+                    scale=alt.Scale(zero=False, padding=10),
+                    axis=alt.Axis(grid=True, gridOpacity=0.3)) 
+        )
         
-        # Línea sólida para el valor Óptimo
+        # 2. Línea Óptima (Punteada y Técnica)
         line_opt = base.mark_line(
             color=color_opt,
-            strokeDash=[5, 5],
-            strokeWidth=2
+            strokeDash=[4, 4], # Punteado clásico de ingeniería
+            strokeWidth=2,
+            opacity=0.8
         ).encode(y=alt.Y(y_opt))
         
-        # Tooltips combinados
-        chart = (area_real + line_opt).properties(
-            height=250,
-            title=alt.TitleParams(text=title, font='Inter', fontSize=14, color=COLOR_TEXT_SEC)
-        ).interactive()
+        # Tooltips claros
+        chart = (line_real + line_opt).properties(
+            height=300, # Un poco más alto para ver mejor
+            title=alt.TitleParams(text=title, font='Inter', fontSize=15, color="#333")
+        ).interactive() # Permite zoom con la rueda del mouse
         
         return chart
 
@@ -286,7 +291,7 @@ if loaded and not df.empty:
         
         with col_c1:
             st.markdown("##### Soda Cáustica (NaOH)")
-            chart_soda = make_modern_chart(
+            chart_soda = make_readable_chart(
                 df_f, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', 
                 "", "L/h", COLOR_REAL, COLOR_OPTIMO
             )
@@ -298,7 +303,7 @@ if loaded and not df.empty:
 
         with col_c2:
             st.markdown("##### Agua de Proceso")
-            chart_agua = make_modern_chart(
+            chart_agua = make_readable_chart(
                 df_f, 'caudal_agua_in', 'opt_hibrida_agua_Lh', 
                 "", "L/h", "#00A8E8", COLOR_OPTIMO
             )
@@ -391,4 +396,5 @@ else:
             <p>Conecta la fuente de datos o ajusta los filtros de fecha.</p>
         </div>
     """, unsafe_allow_html=True)
+
 

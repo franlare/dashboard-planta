@@ -2,399 +2,256 @@ import streamlit as st
 import gspread
 import pandas as pd
 import numpy as np
-import altair as alt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime
 
 # -------------------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILO CSS (MODERN UI 2026)
+# 1. CONFIGURACIÓN VISUAL "2026" & CSS
 # -------------------------------------------------------------------
 st.set_page_config(
-    page_title="Neural Plant Ops",
-    page_icon="⚡",
+    page_title="Neural Ops | Soybean",
+    page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # Sidebar oculta para look app nativa
 )
 
-# Definición de Paleta "Cyber-Industrial"
-COLOR_REAL = "#FF6B35"       # Naranja vibrante (Acción)
-COLOR_OPTIMO = "#2D7DD2"     # Azul técnico (Referencia)
-COLOR_BG_CHART = "transparent"
-COLOR_TEXT_SEC = "#8D99AE"
+# Colores Semánticos (Palette: "Cyber-Industrial")
+C_REAL = "#FF6B35"       # Naranja (Operador/Realidad)
+C_MODEL = "#2D7DD2"      # Azul (IA/Objetivo)
+C_GOOD = "#00CC99"       # Verde (En rango)
+C_BAD = "#FF3366"        # Rojo (Fuera de rango)
+C_NEUTRAL = "#8D99AE"    # Gris
 
-# CSS Personalizado para Look & Feel Minimalista
 st.markdown("""
     <style>
-    /* Tipografía General - Fuente limpia */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+    /* Importar fuentes técnicas */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
     
-    html, body, [class*="css"]  {
-        font-family: 'Inter', sans-serif;
-    }
+    .main { background-color: #0E1117; }
+    h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.5px; }
     
-    /* Títulos y Métricas */
-    h1, h2, h3 {
-        font-weight: 600;
-        letter-spacing: -0.5px;
-    }
-    
-    /* Estilo de Tarjetas de Métricas (KPI Cards) */
+    /* Estilo de Métricas Flotantes */
     div[data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 15px 20px;
+        background: #1E212B;
         border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        transition: transform 0.2s ease;
+        padding: 15px;
+        border: 1px solid #2E3440;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
+    div[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; color: #E5E9F0; }
+    div[data-testid="stMetricLabel"] { color: #8D99AE; font-size: 0.8rem; }
     
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        border-color: rgba(255, 255, 255, 0.3);
+    /* Tabs Modernos */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1rem;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
     }
-
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.85rem;
-        color: #8D99AE;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    div[data-testid="stMetricValue"] {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.8rem;
-        font-weight: 700;
-    }
-
-    /* Ajuste de Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        height: 40px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        padding: 0 16px;
-        background-color: transparent;
-        border: 1px solid transparent;
-    }
-
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: rgba(45, 125, 210, 0.1);
-        color: #2D7DD2;
-        border: 1px solid rgba(45, 125, 210, 0.3);
-    }
-
-    /* Remover Padding superior excesivo */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. LÓGICA DE DATOS (Optimizada)
+# 2. CARGA DE DATOS & CACHÉ
 # -------------------------------------------------------------------
-
 @st.cache_data(ttl=600)
-def cargar_datos():
+def get_data():
     try:
-        creds_dict = st.secrets.get("google_credentials")
-        if not creds_dict:
-            return pd.DataFrame(), False
-            
-        gc = gspread.service_account_from_dict(creds_dict)
-        # Ajusta nombres según tu sheet real
-        spreadsheet = gc.open("Resultados_Planta")  
-        worksheet = spreadsheet.worksheet("Resultados_Hibridos_RF")  
+        creds = st.secrets.get("google_credentials")
+        if not creds: return pd.DataFrame(), False
+        gc = gspread.service_account_from_dict(creds)
+        # Ajustar nombres según tu sheet
+        sh = gc.open("Resultados_Planta").worksheet("Resultados_Hibridos_RF")
+        df = pd.DataFrame(sh.get_all_records())
 
-        data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
-
-        columnas_numericas = [
-            'ffa_pct_in', 'fosforo_ppm_in', 'caudal_aceite_in',  
-            'caudal_acido_in', 'caudal_naoh_in', 'caudal_agua_in',  
-            'temperatura_in', 'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO',  
-            'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',  
-            'sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'  
+        cols_num = [
+            'caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
+            'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 'sim_merma_TEORICA_L'
         ]
-        
-        for col in columnas_numericas:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+        for c in cols_num:
+            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
 
         if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-            df.set_index('timestamp', inplace=True)
-            df.sort_index(inplace=True) # Asegurar orden cronológico
-        else:
-            return pd.DataFrame(), False
-
-        df.dropna(inplace=True)
-        return df, True
-
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.set_index('timestamp').sort_index()
+        return df.dropna(), True
     except Exception as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"Error: {e}")
         return pd.DataFrame(), False
 
-df, loaded = cargar_datos()
+df, loaded = get_data()
 
 # -------------------------------------------------------------------
-# 3. SIDEBAR MINIMALISTA
+# 3. UI PRINCIPAL
 # -------------------------------------------------------------------
-
 if loaded and not df.empty:
+    
+    # --- SIDEBAR (Solo Filtros Esenciales) ---
     with st.sidebar:
-        st.markdown("### 🎛️ Control Center")
+        st.header("🎛️ Filtros")
+        dates = st.date_input("Rango", [df.index.min(), df.index.max()])
+        if len(dates) == 2:
+            df = df[(df.index >= pd.to_datetime(dates[0])) & (df.index <= pd.to_datetime(dates[1]) + pd.Timedelta(days=1))]
         
-        # Filtros de Fecha Compactos
-        min_date = df.index.min().date()
-        max_date = df.index.max().date()
-        
-        date_range = st.date_input(
-            "Periodo de Análisis",
-            (min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
-        )
-        
-        if len(date_range) == 2:
-            start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
-        else:
-            start_date, end_date = pd.to_datetime(min_date), pd.to_datetime(max_date)
+        st.divider()
+        st.subheader("Límites QA")
+        usl_a = st.number_input("Max Acidez", 0.045, 0.1, 0.045, 0.001)
+        cost_soda = st.number_input("Costo Soda", 0.0, 10.0, 0.5)
 
-        st.markdown("---")
-        st.markdown("### ⚙️ Specs")
-        
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            usl = st.number_input("Max Acidez", 0.045, format="%.3f", step=0.001)
-            lsl = st.number_input("Min Acidez", 0.025, format="%.3f", step=0.001)
-        with col_s2:
-            costo_soda = st.number_input("Costo Soda", 0.5, format="%.2f")
-            costo_agua = st.number_input("Costo Agua", 0.1, format="%.2f")
-            
-    # Filtrado
-    df_f = df[(df.index >= start_date) & (df.index <= end_date)].copy()
+    # --- HEADER: RESUMEN TÁCTICO ---
+    col_head1, col_head2 = st.columns([3, 1])
+    with col_head1:
+        st.title("Panel de Control Neural")
+        st.markdown(f"**Estado:** 🟢 Sistema en Línea | **Muestras:** {len(df)}")
+    with col_head2:
+        # Botón de Pánico Simulado o Refresh
+        if st.button("🔄 Actualizar Análisis"):
+            st.cache_data.clear()
+            st.rerun()
 
-    # -------------------------------------------------------------------
-    # 4. HEADER & KPI DASHBOARD (HEADS-UP DISPLAY)
-    # -------------------------------------------------------------------
+    # --- KPI ROW (HEADS UP DISPLAY) ---
+    # Calculos rapidos
+    gap_soda = (df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']).mean()
+    gap_costo = ((df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']) * cost_soda).sum()
+    last_acid = df['sim_acidez_HIBRIDA'].iloc[-1]
     
-    # Cálculos Rápidos
-    df_f['Costo_Real'] = (df_f['caudal_naoh_in'] * costo_soda) + (df_f['caudal_agua_in'] * costo_agua)
-    df_f['Costo_Opt'] = (df_f['opt_hibrida_naoh_Lh'] * costo_soda) + (df_f['opt_hibrida_agua_Lh'] * costo_agua)
-    ahorro = (df_f['Costo_Real'] - df_f['Costo_Opt']).sum()
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("Gap Soda (Avg)", f"{gap_soda:+.2f} L/h", delta_color="inverse")
+    kpi2.metric("Impacto Económico", f"${gap_costo:,.0f}", delta="Perdido" if gap_costo > 0 else "Ahorrado", delta_color="inverse")
+    kpi3.metric("Acidez Actual", f"{last_acid:.3f}%", delta=f"{last_acid-usl_a:.3f} vs Limit", delta_color="inverse")
     
-    acidez = df_f['sim_acidez_HIBRIDA']
-    sigma = acidez.std()
-    mu = acidez.mean()
-    cpk = min((usl - mu)/(3*sigma), (mu - lsl)/(3*sigma)) if sigma > 0 else 0
-    
-    merma_extra = (df_f['sim_merma_ML_TOTAL'] - df_f['sim_merma_TEORICA_L']).mean()
-
-    # Encabezado
-    col_h1, col_h2 = st.columns([3, 1])
-    with col_h1:
-        st.title("Neutralización // Dashboard Operativo")
-        st.markdown(f"<span style='color:{COLOR_TEXT_SEC}'>Última actualización: {datetime.now().strftime('%H:%M:%S')} • {len(df_f)} muestras analizadas</span>", unsafe_allow_html=True)
-    with col_h2:
-        # Espacio para un botón de acción o estado del sistema
-        st.caption("🟢 Sistema En Línea")
+    # KPI Inteligente: ¿Qué tan diferente es el modelo del operador?
+    correlation = df['caudal_naoh_in'].corr(df['opt_hibrida_naoh_Lh'])
+    independence_score = (1 - correlation) * 100 
+    kpi4.metric("Independencia IA", f"{independence_score:.1f}%", help="100% = IA piensa distinto al operador. 0% = IA copia al operador.")
 
     st.markdown("---")
 
-    # KPIs Principales (Estilo Tarjetas)
-    k1, k2, k3, k4 = st.columns(4)
-    
-    k1.metric(
-        "Eficiencia de Costos (Gap)",
-        f"-${ahorro:,.0f}",
-        delta="Pérdida Operativa" if ahorro > 0 else "Óptimo",
-        delta_color="inverse"
-    )
-    
-    k2.metric(
-        "Capacidad (Cpk)",
-        f"{cpk:.2f}",
-        delta="Estable" if cpk > 1.33 else "Revisar Proceso",
-        delta_color="normal" if cpk > 1.33 else "inverse"
-    )
-    
-    k3.metric(
-        "Merma Extra (ML)",
-        f"{merma_extra:.3f}%",
-        delta="Sobre Teórico",
-        delta_color="off"
-    )
-    
-    # Última acidez registrada
-    last_acidez = acidez.iloc[-1] if not acidez.empty else 0
-    k4.metric(
-        "Acidez Final (Live)",
-        f"{last_acidez:.3f}%",
-        delta=f"{last_acidez - mu:.3f} vs Avg",
-        delta_color="off"
-    )
+    # --- PESTAÑAS DE PROFUNDIDAD ---
+    tab1, tab2, tab3 = st.tabs(["🎛️ Sala de Control", "🧠 Inteligencia del Modelo", "📉 Economía & Calidad"])
 
-    st.markdown("### ") # Espaciador
-
-    # -------------------------------------------------------------------
-    # 5. PESTAÑAS DE ANÁLISIS VISUAL
-    # -------------------------------------------------------------------
-    
-    tab_control, tab_calidad, tab_costos, tab_data = st.tabs([
-        "🎛️ Control de Dosificación", "⚗️ Calidad de Producto", "💰 Finanzas", "📋 Raw Data"
-    ])
-
-    # --- FUNCION HELPER MEJORADA (PRIORIDAD: LEGIBILIDAD) ---
-    def make_readable_chart(data, y_real, y_opt, title, y_label, color_real, color_opt):
-        base = alt.Chart(data.reset_index()).encode(
-            x=alt.X('timestamp', 
-                    axis=alt.Axis(title=None, format='%H:%M', grid=True, gridOpacity=0.3))
-        )
-        
-        # 1. Línea Real (Sólida y Fuerte)
-        line_real = base.mark_line(
-            color=color_real,
-            strokeWidth=3,  # Más gruesa para destacar
-            opacity=0.9
-        ).encode(
-            y=alt.Y(y_real, 
-                    title=y_label, 
-                    # ESTO ES CLAVE: zero=False hace "zoom" en los datos
-                    scale=alt.Scale(zero=False, padding=10),
-                    axis=alt.Axis(grid=True, gridOpacity=0.3)) 
-        )
-        
-        # 2. Línea Óptima (Punteada y Técnica)
-        line_opt = base.mark_line(
-            color=color_opt,
-            strokeDash=[4, 4], # Punteado clásico de ingeniería
-            strokeWidth=2,
-            opacity=0.8
-        ).encode(y=alt.Y(y_opt))
-        
-        # Tooltips claros
-        chart = (line_real + line_opt).properties(
-            height=300, # Un poco más alto para ver mejor
-            title=alt.TitleParams(text=title, font='Inter', fontSize=15, color="#333")
-        ).interactive() # Permite zoom con la rueda del mouse
-        
-        return chart
-
-    with tab_control:
-        col_c1, col_c2 = st.columns(2)
-        
-        with col_c1:
-            st.markdown("##### Soda Cáustica (NaOH)")
-            chart_soda = make_readable_chart(
-                df_f, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', 
-                "", "L/h", COLOR_REAL, COLOR_OPTIMO
+    # ==============================================================================
+    # TAB 1: SALA DE CONTROL (Interactivo & Veloz)
+    # ==============================================================================
+    with tab1:
+        def plot_control(data, col_real, col_opt, title, unit):
+            fig = go.Figure()
+            # Area de Rango Operativo (Real)
+            fig.add_trace(go.Scatter(
+                x=data.index, y=data[col_real],
+                mode='lines', name='Operador (Real)',
+                line=dict(color=C_REAL, width=3),
+                fill='tozeroy', fillcolor='rgba(255, 107, 53, 0.1)'
+            ))
+            # Linea de Objetivo (IA)
+            fig.add_trace(go.Scatter(
+                x=data.index, y=data[col_opt],
+                mode='lines', name='Modelo (Optimo)',
+                line=dict(color=C_MODEL, width=2, dash='dash')
+            ))
+            
+            fig.update_layout(
+                title=title, height=350, hovermode="x unified",
+                template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                yaxis=dict(title=unit, gridcolor='#333'), xaxis=dict(gridcolor='#333')
             )
-            st.altair_chart(chart_soda, use_container_width=True)
-            
-            # Mini indicador de error
-            err_soda = (df_f['caudal_naoh_in'] - df_f['opt_hibrida_naoh_Lh']).mean()
-            st.caption(f"Desviación media: **{err_soda:.2f} L/h**")
+            return fig
 
-        with col_c2:
-            st.markdown("##### Agua de Proceso")
-            chart_agua = make_readable_chart(
-                df_f, 'caudal_agua_in', 'opt_hibrida_agua_Lh', 
-                "", "L/h", "#00A8E8", COLOR_OPTIMO
+        c1, c2 = st.columns(2)
+        with c1:
+            st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "Control de Soda", "L/h"), use_container_width=True)
+        with c2:
+            st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "Control de Agua", "L/h"), use_container_width=True)
+
+        # Heatmap de Errores (Para ver patrones horarios)
+        st.subheader("Mapa de Calor: ¿Cuándo nos equivocamos más?")
+        df['hour'] = df.index.hour
+        df['error_abs'] = (df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']).abs()
+        heatmap_data = df.groupby('hour')['error_abs'].mean().reset_index()
+        
+        fig_heat = px.bar(heatmap_data, x='hour', y='error_abs', 
+                          color='error_abs', color_continuous_scale='reds',
+                          labels={'error_abs': 'Error Promedio (L/h)', 'hour': 'Hora del Día'})
+        fig_heat.update_layout(height=250, margin=dict(t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    # ==============================================================================
+    # TAB 2: BRAIN HEALTH (¿El modelo es vago?)
+    # ==============================================================================
+    with tab2:
+        col_b1, col_b2 = st.columns([1, 2])
+        
+        with col_b1:
+            st.markdown("### 🕵️ Auditoría de IA")
+            st.info("""
+            **¿Qué buscamos aquí?**
+            Verificar si el modelo está proponiendo cambios reales o si el operador está ignorando al modelo.
+            
+            * **Puntos en la diagonal:** El modelo y el operador están de acuerdo (o el modelo copia).
+            * **Nube dispersa:** Hay desacuerdo (Oportunidad de optimización).
+            """)
+            
+            # Métricas de Volatilidad
+            std_op = df['caudal_naoh_in'].std()
+            std_mod = df['opt_hibrida_naoh_Lh'].std()
+            
+            st.metric("Volatilidad Operador", f"{std_op:.2f}", help="Cuánto varía la mano del operador")
+            st.metric("Volatilidad Modelo", f"{std_mod:.2f}", help="Cuánto varía la recomendación del modelo")
+            
+            if std_mod < (std_op * 0.5):
+                st.warning("⚠️ El modelo es muy conservador (Poca varianza).")
+            elif std_mod > (std_op * 1.5):
+                st.success("⚡ El modelo es agresivo/dinámico.")
+
+        with col_b2:
+            # Scatter Plot: Real vs Optimo
+            fig_scat = px.scatter(
+                df, x='caudal_naoh_in', y='opt_hibrida_naoh_Lh',
+                color='sim_acidez_HIBRIDA', color_continuous_scale='Viridis',
+                title="Correlación: Operador (X) vs Modelo (Y)",
+                labels={'caudal_naoh_in': 'Lo que puso el Operador', 'opt_hibrida_naoh_Lh': 'Lo que pidió el Modelo'}
             )
-            st.altair_chart(chart_agua, use_container_width=True)
+            # Agregar linea de identidad (y=x)
+            fig_scat.add_shape(type="line", x0=df['caudal_naoh_in'].min(), y0=df['caudal_naoh_in'].min(),
+                               x1=df['caudal_naoh_in'].max(), y1=df['caudal_naoh_in'].max(),
+                               line=dict(color="white", dash="dash", width=1))
             
-            err_agua = (df_f['caudal_agua_in'] - df_f['opt_hibrida_agua_Lh']).mean()
-            st.caption(f"Desviación media: **{err_agua:.2f} L/h**")
+            fig_scat.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_scat, use_container_width=True)
 
-    with tab_calidad:
-        c_q1, c_q2 = st.columns([2, 1])
+    # ==============================================================================
+    # TAB 3: ECONOMÍA & CALIDAD
+    # ==============================================================================
+    with tab3:
+        c_eco1, c_eco2 = st.columns(2)
         
-        with c_q1:
-            st.markdown("##### Evolución de Acidez")
-            # Gráfico de Acidez con banda de límites
-            base_acid = alt.Chart(df_f.reset_index()).encode(x='timestamp')
-            line_acid = base_acid.mark_line(color="#2A9D8F", strokeWidth=2).encode(
-                y=alt.Y('sim_acidez_HIBRIDA', title='% FFA', scale=alt.Scale(domain=[lsl*0.8, usl*1.2]))
-            )
+        with c_eco1:
+            st.markdown("### 📉 Merma Acumulada")
+            # Grafico de Merma comparativa
+            fig_merma = go.Figure()
+            fig_merma.add_trace(go.Box(y=df['sim_merma_TEORICA_L'], name="Teórica (Ideal)", marker_color=C_MODEL))
+            fig_merma.add_trace(go.Box(y=df['sim_merma_ML_TOTAL'], name="Predicción Real (ML)", marker_color=C_REAL))
+            fig_merma.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', title="Distribución de Merma", showlegend=False)
+            st.plotly_chart(fig_merma, use_container_width=True)
             
-            # Bandas de especificación
-            rule_u = base_acid.mark_rule(color='red', strokeDash=[2,2]).encode(y=alt.datum(usl))
-            rule_l = base_acid.mark_rule(color='red', strokeDash=[2,2]).encode(y=alt.datum(lsl))
+        with c_eco2:
+            st.markdown("### 🧪 Control de Acidez")
+            fig_acid = go.Figure()
             
-            st.altair_chart((line_acid + rule_u + rule_l).interactive(), use_container_width=True)
+            # Histograma lateral para ver capacidad
+            fig_acid.add_trace(go.Histogram(
+                x=df['sim_acidez_HIBRIDA'], 
+                nbinsx=30, 
+                marker_color=C_GOOD, 
+                opacity=0.7,
+                name="Frecuencia"
+            ))
+            # Lineas de Limite
+            fig_acid.add_vline(x=usl_a, line_dash="dash", line_color="red", annotation_text="Max Spec")
             
-        with c_q2:
-            st.markdown("##### Histograma")
-            # Histograma simple y limpio
-            hist = alt.Chart(df_f).mark_bar(color="#2A9D8F", opacity=0.7).encode(
-                x=alt.X('sim_acidez_HIBRIDA', bin=alt.Bin(maxbins=20), title='% FFA'),
-                y=alt.Y('count()', title=None)
-            ).properties(height=300)
-            st.altair_chart(hist, use_container_width=True)
-
-    with tab_costos:
-        st.markdown("##### Acumulación de Costos (Real vs Óptimo)")
-        
-        # 1. Calcular acumulados
-        df_f['cum_real'] = df_f['Costo_Real'].cumsum()
-        df_f['cum_opt'] = df_f['Costo_Opt'].cumsum()
-        
-        # 2. Transformar datos a formato largo (Long Format) con Pandas
-        # Esto evita el error de Altair transform_fold
-        df_cum = df_f.reset_index().melt(
-            id_vars=['timestamp'],
-            value_vars=['cum_real', 'cum_opt'],
-            var_name='Tipo_Costo',
-            value_name='Costo_Acumulado'
-        )
-        
-        # 3. Renombrar para que la leyenda se vea bonita
-        df_cum['Tipo_Costo'] = df_cum['Tipo_Costo'].replace({
-            'cum_real': 'Real (Acumulado)', 
-            'cum_opt': 'Óptimo (Acumulado)'
-        })
-
-        # 4. Crear el gráfico corregido
-        chart_cum = alt.Chart(df_cum).mark_line(strokeWidth=3).encode(
-            x=alt.X('timestamp', title=None, axis=alt.Axis(format='%H:%M', grid=False)),
-            y=alt.Y('Costo_Acumulado', title='Costo Acumulado ($)', axis=alt.Axis(grid=False)),
-            color=alt.Color('Tipo_Costo', 
-                            scale=alt.Scale(domain=['Real (Acumulado)', 'Óptimo (Acumulado)'], 
-                                            range=[COLOR_REAL, COLOR_OPTIMO]),
-                            legend=alt.Legend(title=None, orient="bottom")),
-            tooltip=[
-                alt.Tooltip('timestamp', format='%H:%M', title='Hora'),
-                alt.Tooltip('Tipo_Costo', title='Tipo'),
-                alt.Tooltip('Costo_Acumulado', format='$,.2f')
-            ]
-        ).properties(
-            height=350,
-            title=alt.TitleParams(text="Divergencia de Costos", font='Inter', fontSize=14, color=COLOR_TEXT_SEC)
-        ).interactive()
-        
-        st.altair_chart(chart_cum, use_container_width=True)
-
-    with tab_data:
-        st.dataframe(
-            df_f.style.highlight_max(axis=0, color='#ffcccc'), 
-            use_container_width=True,
-            height=400
-        )
+            fig_acid.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', title="Capacidad de Proceso (Acidez)")
+            st.plotly_chart(fig_acid, use_container_width=True)
 
 else:
-    # Pantalla de Estado Vacío Minimalista
-    st.container()
-    st.markdown("""
-        <div style="text-align: center; padding: 50px; color: #666;">
-            <h3>💤 Esperando Datos</h3>
-            <p>Conecta la fuente de datos o ajusta los filtros de fecha.</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-
+    st.warning("Esperando datos... Verifica tu conexión a Google Sheets.")

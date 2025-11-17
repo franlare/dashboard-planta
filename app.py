@@ -317,7 +317,17 @@ if data_loaded_successfully and not df.empty:
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("##### Acidez Final Simulada (Híbrida)")
-                st.line_chart(df_filtrado, y='sim_acidez_HIBRIDA', color=[COLOR_ACIDEZ])
+                # --- INICIO DEL CAMBIO ---
+                chart_acidez = alt.Chart(df_filtrado.reset_index()).mark_line(
+                    interpolate='monotone', 
+                    color=COLOR_ACIDEZ, 
+                    strokeWidth=3
+                ).encode(
+                    x=alt.X('timestamp', title='Fecha', axis=alt.Axis(grid=False)),
+                    y=alt.Y('sim_acidez_HIBRIDA', title='Acidez (%FFA)', axis=alt.Axis(grid=False, domain=False)),
+                    tooltip=['timestamp', 'sim_acidez_HIBRIDA']
+                ).interactive()
+                st.altair_chart(chart_acidez, use_container_width=True)
             with col2:
                 st.markdown("##### Distribución de Acidez Final")
                 bins_acidez = np.linspace(lsl, usl, num=21) 
@@ -434,6 +444,7 @@ else:
         st.error("La carga de datos falló. Revisa la configuración y el archivo de secretos.")
     elif df.empty and data_loaded_successfully:
         st.error("La hoja de Google Sheets está vacía o no se pudieron cargar datos (posiblemente por formato incorrecto o filtro).")
+
 
 
 

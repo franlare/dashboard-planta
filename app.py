@@ -8,52 +8,60 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 
 # -------------------------------------------------------------------
-# 1. CONFIGURACIÓN VISUAL "2026" & CSS
+# 1. CONFIGURACIÓN VISUAL Y CSS "DARK MODE INDUSTRIAL"
 # -------------------------------------------------------------------
 st.set_page_config(
-    page_title="Neural Ops | Soybean",
-    page_icon="🧠",
+    page_title="Panel de Control de Proceso",
+    page_icon="🏭",
     layout="wide",
-    initial_sidebar_state="collapsed" # Sidebar oculta para look app nativa
+    initial_sidebar_state="collapsed"
 )
 
-# Colores Semánticos (Palette: "Cyber-Industrial")
-C_REAL = "#FF6B35"       # Naranja (Operador/Realidad)
-C_MODEL = "#2D7DD2"      # Azul (IA/Objetivo)
-C_GOOD = "#00CC99"       # Verde (En rango)
-C_BAD = "#FF3366"        # Rojo (Fuera de rango)
-C_NEUTRAL = "#8D99AE"    # Gris
+# --- PALETA DE COLORES REFINADA ---
+# Soda
+C_SODA_REAL = "#FF6B35"   # Naranja Intenso
+C_SODA_OPT = "#CC5500"    # Naranja Oscuro (Referencia)
+
+# Agua (Diferenciada)
+C_AGUA_REAL = "#00B4D8"   # Cyan Brillante
+C_AGUA_OPT = "#0077B6"    # Azul Profundo (Referencia)
+
+# Generales
+C_MODEL_GENERIC = "#2D7DD2" 
+C_ERROR = "#8B0000"       # Rojo Oscuro (Sangre/Alerta)
+C_LIMITS = "#F1C40F"      # Amarillo (Límites SPC)
 
 st.markdown("""
     <style>
-    /* Importar fuentes técnicas */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
     
     .main { background-color: #0E1117; }
-    h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.5px; }
+    h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.5px; color: #E0E0E0; }
     
-    /* Estilo de Métricas Flotantes */
+    /* Estilo de Tarjetas de Métricas (Botones de Lectura) */
     div[data-testid="stMetric"] {
-        background: #1E212B;
-        border-radius: 12px;
-        padding: 15px;
-        border: 1px solid #2E3440;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        background: #161b22;
+        border-radius: 8px;
+        padding: 10px 15px;
+        border: 1px solid #30363d;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        transition: all 0.2s;
     }
-    div[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; color: #E5E9F0; }
-    div[data-testid="stMetricLabel"] { color: #8D99AE; font-size: 0.8rem; }
+    div[data-testid="stMetric"]:hover {
+        border-color: #8b949e;
+        transform: translateY(-2px);
+    }
+    div[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; color: #FFFFFF; font-size: 1.4rem; }
+    div[data-testid="stMetricLabel"] { color: #8D99AE; font-size: 0.8rem; font-weight: 600; }
     
-    /* Tabs Modernos */
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 1rem;
-        font-family: 'Inter', sans-serif;
-        font-weight: 600;
-    }
+    /* Ajuste de Tabs */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { border-radius: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. CARGA DE DATOS & CACHÉ
+# 2. CARGA DE DATOS
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600)
 def get_data():
@@ -61,7 +69,6 @@ def get_data():
         creds = st.secrets.get("google_credentials")
         if not creds: return pd.DataFrame(), False
         gc = gspread.service_account_from_dict(creds)
-        # Ajustar nombres según tu sheet
         sh = gc.open("Resultados_Planta").worksheet("Resultados_Hibridos_RF")
         df = pd.DataFrame(sh.get_all_records())
 
@@ -75,6 +82,11 @@ def get_data():
         if 'timestamp' in df.columns:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df = df.set_index('timestamp').sort_index()
+            
+        # CÁLCULO DE ERRORES (RESIDUOS)
+        df['err_soda'] = df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']
+        df['err_agua'] = df['caudal_agua_in'] - df['opt_hibrida_agua_Lh']
+            
         return df.dropna(), True
     except Exception as e:
         st.error(f"Error: {e}")
@@ -83,175 +95,181 @@ def get_data():
 df, loaded = get_data()
 
 # -------------------------------------------------------------------
-# 3. UI PRINCIPAL
+# 3. INTERFAZ DE USUARIO
 # -------------------------------------------------------------------
 if loaded and not df.empty:
     
-    # --- SIDEBAR (Solo Filtros Esenciales) ---
+    # --- SIDEBAR ---
     with st.sidebar:
-        st.header("🎛️ Filtros")
-        dates = st.date_input("Rango", [df.index.min(), df.index.max()])
+        st.header("⚙️ Configuración")
+        dates = st.date_input("Rango de Fecha", [df.index.min(), df.index.max()])
         if len(dates) == 2:
             df = df[(df.index >= pd.to_datetime(dates[0])) & (df.index <= pd.to_datetime(dates[1]) + pd.Timedelta(days=1))]
-        
         st.divider()
-        st.subheader("Límites QA")
-        usl_a = st.number_input("Max Acidez", 0.045, 0.1, 0.045, 0.001)
-        cost_soda = st.number_input("Costo Soda", 0.0, 10.0, 0.5)
+        st.caption("Panel de Control v2.1")
 
-    # --- HEADER: RESUMEN TÁCTICO ---
-    col_head1, col_head2 = st.columns([3, 1])
-    with col_head1:
-        st.title("Panel de Control Neural")
-        st.markdown(f"**Estado:** 🟢 Sistema en Línea | **Muestras:** {len(df)}")
-    with col_head2:
-        # Botón de Pánico Simulado o Refresh
-        if st.button("🔄 Actualizar Análisis"):
-            st.cache_data.clear()
-            st.rerun()
-
-    # --- KPI ROW (HEADS UP DISPLAY) ---
-    # Calculos rapidos
-    gap_soda = (df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']).mean()
-    gap_costo = ((df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']) * cost_soda).sum()
-    last_acid = df['sim_acidez_HIBRIDA'].iloc[-1]
+    # --- TÍTULO Y ÚLTIMAS LECTURAS (BOTONES) ---
+    st.title("Panel de Control de Proceso")
     
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Gap Soda (Avg)", f"{gap_soda:+.2f} L/h", delta_color="inverse")
-    kpi2.metric("Impacto Económico", f"${gap_costo:,.0f}", delta="Perdido" if gap_costo > 0 else "Ahorrado", delta_color="inverse")
-    kpi3.metric("Acidez Actual", f"{last_acid:.3f}%", delta=f"{last_acid-usl_a:.3f} vs Limit", delta_color="inverse")
+    # Obtener últimos valores
+    last = df.iloc[-1]
     
-    # KPI Inteligente: ¿Qué tan diferente es el modelo del operador?
-    correlation = df['caudal_naoh_in'].corr(df['opt_hibrida_naoh_Lh'])
-    independence_score = (1 - correlation) * 100 
-    kpi4.metric("Independencia IA", f"{independence_score:.1f}%", help="100% = IA piensa distinto al operador. 0% = IA copia al operador.")
-
+    # Panel de Estado Instantáneo (Botones de visualización)
+    st.markdown("### ⏱️ Última Lectura de Proceso")
+    col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+    
+    with col_kpi1:
+        st.metric("Soda: REAL", f"{last['caudal_naoh_in']:.1f} L/h", delta="Lectura Sensor")
+    with col_kpi2:
+        diff_soda = last['caudal_naoh_in'] - last['opt_hibrida_naoh_Lh']
+        st.metric("Soda: MODELO", f"{last['opt_hibrida_naoh_Lh']:.1f} L/h", 
+                  delta=f"{diff_soda:+.1f} Desvío", delta_color="inverse")
+        
+    with col_kpi3:
+        st.metric("Agua: REAL", f"{last['caudal_agua_in']:.1f} L/h", delta="Lectura Sensor")
+    with col_kpi4:
+        diff_agua = last['caudal_agua_in'] - last['opt_hibrida_agua_Lh']
+        st.metric("Agua: MODELO", f"{last['opt_hibrida_agua_Lh']:.1f} L/h", 
+                  delta=f"{diff_agua:+.1f} Desvío", delta_color="inverse")
+    
     st.markdown("---")
 
-    # --- PESTAÑAS DE PROFUNDIDAD ---
-    tab1, tab2, tab3 = st.tabs(["🎛️ Sala de Control", "🧠 Inteligencia del Modelo", "📉 Economía & Calidad"])
+    # --- PESTAÑAS PRINCIPALES ---
+    tab_control, tab_error, tab_brain, tab_eco = st.tabs([
+        "🎛️ Sala de Control", 
+        "⚠️ Análisis de Error (Modelo)", 
+        "🧠 Inteligencia Artificial", 
+        "📉 Calidad & Costos"
+    ])
 
     # ==============================================================================
-    # TAB 1: SALA DE CONTROL (Interactivo & Veloz)
+    # TAB 1: SALA DE CONTROL (COLORES DIFERENCIADOS)
     # ==============================================================================
-    with tab1:
-        def plot_control(data, col_real, col_opt, title, unit):
+    with tab_control:
+        def plot_process(data, col_real, col_opt, title, color_real, color_opt):
             fig = go.Figure()
-            # Area de Rango Operativo (Real)
             fig.add_trace(go.Scatter(
-                x=data.index, y=data[col_real],
-                mode='lines', name='Operador (Real)',
-                line=dict(color=C_REAL, width=3),
-                fill='tozeroy', fillcolor='rgba(255, 107, 53, 0.1)'
+                x=data.index, y=data[col_real], mode='lines', name='Real (Planta)',
+                line=dict(color=color_real, width=3),
+                fill='tozeroy', fillcolor=f"rgba{tuple(int(color_real.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}"
             ))
-            # Linea de Objetivo (IA)
             fig.add_trace(go.Scatter(
-                x=data.index, y=data[col_opt],
-                mode='lines', name='Modelo (Optimo)',
-                line=dict(color=C_MODEL, width=2, dash='dash')
+                x=data.index, y=data[col_opt], mode='lines', name='Modelo (Target)',
+                line=dict(color=color_opt, width=2, dash='dash')
             ))
-            
             fig.update_layout(
-                title=title, height=350, hovermode="x unified",
-                template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                yaxis=dict(title=unit, gridcolor='#333'), xaxis=dict(gridcolor='#333')
+                title=title, height=320, hovermode="x unified", template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=0, r=0, t=30, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             return fig
 
         c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "Control de Soda", "L/h"), use_container_width=True)
+            st.plotly_chart(plot_process(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda (NaOH)", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
         with c2:
-            st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "Control de Agua", "L/h"), use_container_width=True)
-
-        # Heatmap de Errores (Para ver patrones horarios)
-        st.subheader("Mapa de Calor: ¿Cuándo nos equivocamos más?")
-        df['hour'] = df.index.hour
-        df['error_abs'] = (df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']).abs()
-        heatmap_data = df.groupby('hour')['error_abs'].mean().reset_index()
-        
-        fig_heat = px.bar(heatmap_data, x='hour', y='error_abs', 
-                          color='error_abs', color_continuous_scale='reds',
-                          labels={'error_abs': 'Error Promedio (L/h)', 'hour': 'Hora del Día'})
-        fig_heat.update_layout(height=250, margin=dict(t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-        st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(plot_process(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
 
     # ==============================================================================
-    # TAB 2: BRAIN HEALTH (¿El modelo es vago?)
+    # TAB 2: ANÁLISIS DE ERROR DEL MODELO (NUEVO)
     # ==============================================================================
-    with tab2:
-        col_b1, col_b2 = st.columns([1, 2])
+    with tab_error:
+        st.markdown("### Diagnóstico de Desviaciones (Residuos)")
         
-        with col_b1:
+        # Seleccionar variable para analizar
+        var_analisis = st.radio("Variable a analizar:", ["Soda (NaOH)", "Agua"], horizontal=True)
+        col_err_data = 'err_soda' if var_analisis == "Soda (NaOH)" else 'err_agua'
+        
+        # --- GRÁFICO 1: SERIE DE TIEMPO DE RESIDUOS (ROJO OSCURO) ---
+        fig_res = go.Figure()
+        fig_res.add_trace(go.Scatter(
+            x=df.index, y=df[col_err_data],
+            mode='lines', name='Error (Real - Modelo)',
+            line=dict(color=C_ERROR, width=2)
+        ))
+        fig_res.add_hline(y=0, line_color="white", line_width=1, opacity=0.5)
+        fig_res.update_layout(
+            title=f"Evolución Temporal del Error ({var_analisis})",
+            height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            yaxis_title="Error (L/h)"
+        )
+        st.plotly_chart(fig_res, use_container_width=True)
+        
+        col_spc1, col_spc2 = st.columns(2)
+        
+        # --- GRÁFICO 2: SPC (CONTROL ESTADÍSTICO) ---
+        with col_spc1:
+            # Cálculos SPC
+            mu = df[col_err_data].mean()
+            sigma = df[col_err_data].std()
+            ucl = mu + 3*sigma
+            lcl = mu - 3*sigma
+            
+            fig_spc = go.Figure()
+            fig_spc.add_trace(go.Scatter(y=df[col_err_data], mode='markers+lines', name='Error', line=dict(color=C_ERROR, width=1)))
+            fig_spc.add_hline(y=mu, line_dash="dash", line_color="white", annotation_text="Media")
+            fig_spc.add_hline(y=ucl, line_dash="dash", line_color=C_LIMITS, annotation_text="+3σ (UCL)")
+            fig_spc.add_hline(y=lcl, line_dash="dash", line_color=C_LIMITS, annotation_text="-3σ (LCL)")
+            
+            fig_spc.update_layout(
+                title="Gráfico de Control SPC (Estabilidad del Error)",
+                height=350, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_spc, use_container_width=True)
+            
+            if abs(mu) > 2:
+                st.warning(f"⚠️ Alerta de Sesgo: El error promedio no es cero ({mu:.2f}). El modelo tiende a {'subestimar' if mu > 0 else 'sobreestimar'}.")
+
+        # --- GRÁFICO 3: HISTOGRAMA DE RESIDUOS (NORMALIDAD) ---
+        with col_spc2:
+            fig_hist = px.histogram(
+                df, x=col_err_data, nbins=30, 
+                title="Distribución de Errores (¿Es ruido normal?)",
+                color_discrete_sequence=[C_ERROR]
+            )
+            fig_hist.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350)
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+    # ==============================================================================
+    # TAB 3: BRAIN HEALTH
+    # ==============================================================================
+    with tab_brain:
+        c_b1, c_b2 = st.columns([1, 2])
+        with c_b1:
             st.markdown("### 🕵️ Auditoría de IA")
-            st.info("""
-            **¿Qué buscamos aquí?**
-            Verificar si el modelo está proponiendo cambios reales o si el operador está ignorando al modelo.
-            
-            * **Puntos en la diagonal:** El modelo y el operador están de acuerdo (o el modelo copia).
-            * **Nube dispersa:** Hay desacuerdo (Oportunidad de optimización).
-            """)
-            
-            # Métricas de Volatilidad
-            std_op = df['caudal_naoh_in'].std()
-            std_mod = df['opt_hibrida_naoh_Lh'].std()
-            
-            st.metric("Volatilidad Operador", f"{std_op:.2f}", help="Cuánto varía la mano del operador")
-            st.metric("Volatilidad Modelo", f"{std_mod:.2f}", help="Cuánto varía la recomendación del modelo")
-            
-            if std_mod < (std_op * 0.5):
-                st.warning("⚠️ El modelo es muy conservador (Poca varianza).")
-            elif std_mod > (std_op * 1.5):
-                st.success("⚡ El modelo es agresivo/dinámico.")
-
-        with col_b2:
-            # Scatter Plot: Real vs Optimo
+            st.info("Comparativa de comportamiento entre Operador y Modelo.")
+            st.metric("Correlación (Independencia)", f"{(1 - df['caudal_naoh_in'].corr(df['opt_hibrida_naoh_Lh']))*100:.1f}%")
+        with c_b2:
             fig_scat = px.scatter(
                 df, x='caudal_naoh_in', y='opt_hibrida_naoh_Lh',
                 color='sim_acidez_HIBRIDA', color_continuous_scale='Viridis',
-                title="Correlación: Operador (X) vs Modelo (Y)",
-                labels={'caudal_naoh_in': 'Lo que puso el Operador', 'opt_hibrida_naoh_Lh': 'Lo que pidió el Modelo'}
+                title="Dispersión: Operador vs Modelo", opacity=0.7
             )
-            # Agregar linea de identidad (y=x)
             fig_scat.add_shape(type="line", x0=df['caudal_naoh_in'].min(), y0=df['caudal_naoh_in'].min(),
                                x1=df['caudal_naoh_in'].max(), y1=df['caudal_naoh_in'].max(),
-                               line=dict(color="white", dash="dash", width=1))
-            
-            fig_scat.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)')
+                               line=dict(color="white", dash="dash"))
+            fig_scat.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=400)
             st.plotly_chart(fig_scat, use_container_width=True)
 
     # ==============================================================================
-    # TAB 3: ECONOMÍA & CALIDAD
+    # TAB 4: ECONOMÍA & CALIDAD
     # ==============================================================================
-    with tab3:
+    with tab_eco:
         c_eco1, c_eco2 = st.columns(2)
-        
         with c_eco1:
             st.markdown("### 📉 Merma Acumulada")
-            # Grafico de Merma comparativa
             fig_merma = go.Figure()
-            fig_merma.add_trace(go.Box(y=df['sim_merma_TEORICA_L'], name="Teórica (Ideal)", marker_color=C_MODEL))
-            fig_merma.add_trace(go.Box(y=df['sim_merma_ML_TOTAL'], name="Predicción Real (ML)", marker_color=C_REAL))
-            fig_merma.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', title="Distribución de Merma", showlegend=False)
+            fig_merma.add_trace(go.Box(y=df['sim_merma_TEORICA_L'], name="Teórica", marker_color=C_MODEL_GENERIC))
+            fig_merma.add_trace(go.Box(y=df['sim_merma_ML_TOTAL'], name="Real (ML)", marker_color=C_SODA_REAL))
+            fig_merma.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_merma, use_container_width=True)
-            
         with c_eco2:
             st.markdown("### 🧪 Control de Acidez")
-            fig_acid = go.Figure()
-            
-            # Histograma lateral para ver capacidad
-            fig_acid.add_trace(go.Histogram(
-                x=df['sim_acidez_HIBRIDA'], 
-                nbinsx=30, 
-                marker_color=C_GOOD, 
-                opacity=0.7,
-                name="Frecuencia"
-            ))
-            # Lineas de Limite
-            fig_acid.add_vline(x=usl_a, line_dash="dash", line_color="red", annotation_text="Max Spec")
-            
-            fig_acid.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', title="Capacidad de Proceso (Acidez)")
+            fig_acid = px.histogram(df, x='sim_acidez_HIBRIDA', nbins=30, color_discrete_sequence=["#00CC99"])
+            fig_acid.add_vline(x=0.045, line_dash="dash", line_color="red", annotation_text="Límite")
+            fig_acid.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_acid, use_container_width=True)
 
 else:
-    st.warning("Esperando datos... Verifica tu conexión a Google Sheets.")
+    st.info("Conectando con el proceso...")

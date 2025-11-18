@@ -69,6 +69,7 @@ st.markdown("""
         padding-bottom: 1rem;
         margin-top: 0px;
     }
+    header { visibility: hidden; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -349,5 +350,6 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+
 
 

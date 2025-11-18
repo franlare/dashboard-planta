@@ -119,7 +119,7 @@ if loaded and not df.empty:
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
         # Puedes cambiar esta URL por la ruta local de tu imagen: st.image("logo.png")
-        st.image("image_60c7ed.png", width=80)
+        st.image("image_60c7ed.png", width=130 , height=160)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -158,7 +158,7 @@ if loaded and not df.empty:
         
         st.markdown(f"""
             <div class="info-bar">
-                ⏱️ Última Act: {datetime.now().strftime('%H:%M:%S')} | 
+                ⏱️ Última Act: {hora_ar} | 
                 📊 Muestras Analizadas: {len(df)} | 
                 📡 Estado: ONLINE
             </div>
@@ -306,4 +306,5 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+
 

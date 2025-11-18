@@ -4,3 +4,4 @@ numpy
 gspread
 plotly
 streamlit-autorefresh
+pytz

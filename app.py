@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 
 # -------------------------------------------------------------------
 # 1. CONFIGURACIÓN VISUAL & CSS
@@ -16,6 +17,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Esto hace que la app se ejecute sola cada 60 segundos (60000 ms)
+count = st_autorefresh(interval=60000, limit=None, key="fizzbuzzcounter")
 
 # --- PALETA DE COLORES ---
 C_SODA_REAL = "#FF6B35"   # Naranja
@@ -54,7 +58,7 @@ st.markdown("""
 # -------------------------------------------------------------------
 # 2. CARGA DE DATOS
 # -------------------------------------------------------------------
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=180)
 def get_data():
     try:
         creds = st.secrets.get("google_credentials")
@@ -293,3 +297,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

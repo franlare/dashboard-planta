@@ -9,7 +9,7 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------------------------------------------------------
-# 1. CONFIGURACIÓN VISUAL & CSS
+# 1. CONFIGURACIÓN VISUAL
 # -------------------------------------------------------------------
 st.set_page_config(
     page_title="Panel de Control de Proceso",
@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Esto hace que la app se ejecute sola cada 60 segundos (60000 ms)
+# --- AUTO-REFRESH (Cada 60 seg) ---
 count = st_autorefresh(interval=60000, limit=None, key="fizzbuzzcounter")
 
 # --- PALETA DE COLORES ---
@@ -26,7 +26,7 @@ C_SODA_REAL = "#FF6B35"   # Naranja
 C_SODA_OPT = "#CC5500"    # Naranja Oscuro
 C_AGUA_REAL = "#00B4D8"   # Cyan
 C_AGUA_OPT = "#0077B6"    # Azul Oscuro
-C_TEMP = "#9D4EDD"        # Violeta (Temperatura)
+C_TEMP = "#9D4EDD"        # Violeta
 C_ERROR = "#E63946"       # Rojo Alerta
 C_COSTO_REAL = "#FF6B35"
 C_COSTO_OPT = "#2D7DD2"
@@ -38,7 +38,7 @@ st.markdown("""
     .main { background-color: #0E1117; }
     h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; color: #E0E0E0; }
     
-    /* KPI Cards / Botones */
+    /* KPI Cards */
     div[data-testid="stMetric"] {
         background: #161b22;
         border-radius: 8px;
@@ -49,16 +49,25 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; color: #FFFFFF; font-size: 1.4rem; }
     div[data-testid="stMetricLabel"] { color: #8D99AE; font-size: 0.8rem; font-weight: 600; }
     
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { border-radius: 4px; }
+    /* Info Bar Style */
+    .info-bar {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.8rem;
+        color: #8D99AE;
+        background-color: #161b22;
+        padding: 8px;
+        border-radius: 5px;
+        border: 1px solid #30363d;
+        text-align: right;
+        margin-bottom: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
 # 2. CARGA DE DATOS
 # -------------------------------------------------------------------
-@st.cache_data(ttl=180)
+@st.cache_data(ttl=60) 
 def get_data():
     try:
         creds = st.secrets.get("google_credentials")
@@ -67,7 +76,6 @@ def get_data():
         sh = gc.open("Resultados_Planta").worksheet("Resultados_Hibridos_RF")
         df = pd.DataFrame(sh.get_all_records())
 
-        # Aseguramos que temperatura_in esté en la lista
         cols_num = [
             'caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
             'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 
@@ -99,31 +107,34 @@ if loaded and not df.empty:
     
     # --- SIDEBAR ---
     with st.sidebar:
-        st.header("⚙️ Configuración")
+        st.header("⚙️ Filtros")
         dates = st.date_input("Rango", [df.index.min(), df.index.max()])
         if len(dates) == 2:
             df = df[(df.index >= pd.to_datetime(dates[0])) & (df.index <= pd.to_datetime(dates[1]) + pd.Timedelta(days=1))]
-        
         st.divider()
-        st.subheader("Parámetros Financieros")
         cost_soda = st.number_input("Costo Soda ($/L)", 0.0, 100.0, 0.5, 0.1)
-        
-    # --- HEADER & KPI ---
-    st.title("Panel de Control de Proceso")
-    
+
+    # --- HEADER CON LOGO ---
+    col_logo, col_title = st.columns([1, 7])
+    with col_logo:
+        # Puedes cambiar esta URL por la ruta local de tu imagen: st.image("logo.png")
+        st.image("https://cdn-icons-png.flaticon.com/512/2893/2893447.png", width=80)
+    with col_title:
+        st.title("Panel de Control de Proceso")
+        st.caption("Monitorización en Tiempo Real - Planta Neural")
+
     last = df.iloc[-1]
     
-    col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
-    with col_kpi1:
-        st.metric("Soda: REAL", f"{last['caudal_naoh_in']:.1f} L/h", delta="Sensor")
-    with col_kpi2:
+    # KPI HUD
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.metric("Soda: REAL", f"{last['caudal_naoh_in']:.1f} L/h", delta="Sensor")
+    with k2: 
         diff_soda = last['caudal_naoh_in'] - last['opt_hibrida_naoh_Lh']
-        st.metric("Soda: MODELO", f"{last['opt_hibrida_naoh_Lh']:.1f} L/h", delta=f"{diff_soda:+.1f} Desvío", delta_color="inverse")
-    with col_kpi3:
-        st.metric("Agua: REAL", f"{last['caudal_agua_in']:.1f} L/h", delta="Sensor")
-    with col_kpi4:
+        st.metric("Soda: MODELO", f"{last['opt_hibrida_naoh_Lh']:.1f} L/h", delta=f"{diff_soda:+.1f}", delta_color="inverse")
+    with k3: st.metric("Agua: REAL", f"{last['caudal_agua_in']:.1f} L/h", delta="Sensor")
+    with k4: 
         diff_agua = last['caudal_agua_in'] - last['opt_hibrida_agua_Lh']
-        st.metric("Agua: MODELO", f"{last['opt_hibrida_agua_Lh']:.1f} L/h", delta=f"{diff_agua:+.1f} Desvío", delta_color="inverse")
+        st.metric("Agua: MODELO", f"{last['opt_hibrida_agua_Lh']:.1f} L/h", delta=f"{diff_agua:+.1f}", delta_color="inverse")
 
     st.markdown("---")
 
@@ -136,10 +147,19 @@ if loaded and not df.empty:
     ])
 
     # ==============================================================================
-    # TAB 1: SALA DE CONTROL (Input + Perturbaciones)
+    # TAB 1: SALA DE CONTROL
     # ==============================================================================
     with tab_control:
-        # Helper de gráfica
+        # --- LEYENDA INFORMATIVA (NUEVO) ---
+        st.markdown(f"""
+            <div class="info-bar">
+                ⏱️ Última Act: {datetime.now().strftime('%H:%M:%S')} | 
+                📊 Muestras Analizadas: {len(df)} | 
+                📡 Estado: ONLINE
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Funciones de ploteo
         def plot_control(data, col_real, col_opt, title, color_real, color_opt):
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -159,15 +179,13 @@ if loaded and not df.empty:
             )
             return fig
 
-        # Fila 1: Variables de Control (Soda y Agua)
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
         with c2:
             st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
 
-        # Fila 2: Perturbaciones (Temperatura)
-        st.markdown("##### 🌡️ Variables de Entrada (Contexto)")
+        st.markdown("##### 🌡️ Perturbaciones (Temperatura Entrada)")
         if 'temperatura_in' in df.columns:
             fig_temp = go.Figure()
             fig_temp.add_trace(go.Scatter(
@@ -175,16 +193,13 @@ if loaded and not df.empty:
                 line=dict(color=C_TEMP, width=2)
             ))
             fig_temp.update_layout(
-                title="Temperatura del Aceite de Entrada (°C)", height=250, hovermode="x unified",
-                template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=30, b=0)
+                height=200, hovermode="x unified", template="plotly_dark", 
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=10, b=0)
             )
             st.plotly_chart(fig_temp, use_container_width=True)
-        else:
-            st.warning("La columna 'temperatura_in' no se encontró en los datos.")
 
     # ==============================================================================
-    # TAB 2: DIAGNÓSTICO DE ERROR (Residuos + CUSUM)
+    # TAB 2: DIAGNÓSTICO DE ERROR (NUEVO MAE Y BIAS)
     # ==============================================================================
     with tab_error:
         col_sel1, col_sel2 = st.columns([1,3])
@@ -192,12 +207,20 @@ if loaded and not df.empty:
             st.markdown("#### Configuración")
             var_analisis = st.radio("Variable a auditar:", ["Soda (NaOH)", "Agua"])
             col_err = 'err_soda' if var_analisis == "Soda (NaOH)" else 'err_agua'
-        
+            
+            # --- CÁLCULO DE MÉTRICAS (NUEVO) ---
+            mae = df[col_err].abs().mean()
+            bias = df[col_err].mean()
+            
+            st.divider()
+            st.metric("MAE (Error Abs)", f"{mae:.2f} L/h", help="Promedio del error absoluto (magnitud)")
+            st.metric("BIAS (Sesgo)", f"{bias:.2f} L/h", 
+                      delta="Sesgo Positivo" if bias > 0 else "Sesgo Negativo",
+                      help="Promedio del error. Positivo = Operador pone más que el modelo.")
+
         with col_sel2:
-            # Gráfico CUSUM (Suma Acumulada)
             st.markdown("#### 🕵️ Detección de Deriva (CUSUM)")
             df['cusum_temp'] = df[col_err].cumsum()
-            
             fig_cusum = go.Figure()
             fig_cusum.add_trace(go.Scatter(
                 x=df.index, y=df['cusum_temp'], mode='lines', fill='tozeroy',
@@ -205,12 +228,10 @@ if loaded and not df.empty:
             ))
             fig_cusum.update_layout(
                 height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=10, b=10), yaxis_title="Litros Acumulados"
+                margin=dict(t=10, b=10), yaxis_title="Lts Acumulados"
             )
             st.plotly_chart(fig_cusum, use_container_width=True)
-            st.caption("Si la curva sube/baja constantemente, hay un sesgo sistemático en el control.")
 
-        # Gráficos SPC y Residuos
         c_err1, c_err2 = st.columns(2)
         with c_err1:
             fig_res = go.Figure()
@@ -232,8 +253,7 @@ if loaded and not df.empty:
         with c_b1:
             st.markdown("### Auditoría IA")
             corr = df['caudal_naoh_in'].corr(df['opt_hibrida_naoh_Lh'])
-            st.metric("Independencia (1-Corr)", f"{(1-corr)*100:.1f}%", help="Alto = IA propone cosas distintas al operador")
-            
+            st.metric("Independencia", f"{(1-corr)*100:.1f}%")
             std_op = df['caudal_naoh_in'].std()
             std_mod = df['opt_hibrida_naoh_Lh'].std()
             st.metric("Volatilidad Modelo", f"{std_mod:.2f}", delta=f"{std_mod-std_op:.2f} vs Op")
@@ -251,35 +271,19 @@ if loaded and not df.empty:
             st.plotly_chart(fig_scat, use_container_width=True)
 
     # ==============================================================================
-    # TAB 4: ECONOMÍA (Nueva gráfica de costos)
+    # TAB 4: ECONOMÍA
     # ==============================================================================
     with tab_eco:
         st.markdown("### 💰 Impacto Financiero Acumulado")
-        
-        # Calculo de costos acumulados (Aprox)
         df['costo_real_acum'] = (df['caudal_naoh_in'] * cost_soda).cumsum()
         df['costo_opt_acum'] = (df['opt_hibrida_naoh_Lh'] * cost_soda).cumsum()
         
         fig_cost = go.Figure()
-        fig_cost.add_trace(go.Scatter(
-            x=df.index, y=df['costo_real_acum'], mode='lines', name='Gasto Real',
-            line=dict(color=C_COSTO_REAL, width=2)
-        ))
-        fig_cost.add_trace(go.Scatter(
-            x=df.index, y=df['costo_opt_acum'], mode='lines', name='Gasto Óptimo (IA)',
-            line=dict(color=C_COSTO_OPT, width=2, dash='dash'),
-            fill='tonexty', fillcolor='rgba(45, 125, 210, 0.1)' # Rellena la diferencia
-        ))
-        
-        fig_cost.update_layout(
-            title="Acumulación de Costos (Soda)", height=300, hovermode="x unified",
-            template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            yaxis_title="Costo Acumulado ($)"
-        )
+        fig_cost.add_trace(go.Scatter(x=df.index, y=df['costo_real_acum'], mode='lines', name='Real', line=dict(color=C_COSTO_REAL)))
+        fig_cost.add_trace(go.Scatter(x=df.index, y=df['costo_opt_acum'], mode='lines', name='Modelo', line=dict(color=C_COSTO_OPT, dash='dash'), fill='tonexty', fillcolor='rgba(45, 125, 210, 0.1)'))
+        fig_cost.update_layout(height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_cost, use_container_width=True)
 
-        # Calidad
-        st.divider()
         col_q1, col_q2 = st.columns(2)
         with col_q1:
             st.markdown("##### Distribución de Merma")
@@ -297,4 +301,3 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
-

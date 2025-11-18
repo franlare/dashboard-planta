@@ -2,12 +2,12 @@ import streamlit as st
 import gspread
 import pandas as pd
 import numpy as np
-import pytz
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
+import pytz
 
 # -------------------------------------------------------------------
 # 1. CONFIGURACIÓN VISUAL
@@ -118,8 +118,8 @@ if loaded and not df.empty:
     # --- HEADER CON LOGO ---
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
-        # Puedes cambiar esta URL por la ruta local de tu imagen: st.image("logo.png")
-        st.image("image_60c7ed.png", use_container_width=True)
+        # Imagen con use_container_width para que se adapte y no se vea minúscula
+        st.image("logo2.png", use_container_width=True)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -148,14 +148,13 @@ if loaded and not df.empty:
     ])
 
     # ==============================================================================
-    # TAB 1: SALA DE CONTROL
+    # TAB 1: SALA DE CONTROL (MEJORADO: 8H DEFAULT + ZOOM Y)
     # ==============================================================================
     with tab_control:
-        # --- LEYENDA INFORMATIVA (NUEVO) ---
         # Definir zona horaria
         tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
         hora_ar = datetime.now(tz_ar).strftime('%H:%M:%S')
-        
+
         st.markdown(f"""
             <div class="info-bar">
                 ⏱️ Última Act: {hora_ar} | 
@@ -164,8 +163,32 @@ if loaded and not df.empty:
             </div>
         """, unsafe_allow_html=True)
         
-        # Funciones de ploteo
-        def plot_control(data, col_real, col_opt, title, color_real, color_opt):
+        # --- CÁLCULO DE LÍMITES DE VISUALIZACIÓN (Lógica de Zoom Inteligente) ---
+        end_8h = df.index.max()
+        start_8h = end_8h - pd.Timedelta(hours=8)
+        
+        # Filtramos un df temporal solo para calcular los minimos y maximos de esas 8 horas
+        # Esto asegura que el eje Y se ajuste al contenido visible, no al histórico de hace 3 meses.
+        df_8h = df[df.index >= start_8h]
+        
+        # Limites Soda (+- 1 L/h)
+        if not df_8h.empty:
+            # Maximos y minimos considerando tanto Real como Modelo para que nada quede afuera
+            max_soda_view = max(df_8h['caudal_naoh_in'].max(), df_8h['opt_hibrida_naoh_Lh'].max())
+            min_soda_view = min(df_8h['caudal_naoh_in'].min(), df_8h['opt_hibrida_naoh_Lh'].min())
+            ylim_soda = [min_soda_view - 1, max_soda_view + 1] # Margen solicitado
+            
+            # Limites Agua (+- 5 L/h)
+            max_agua_view = max(df_8h['caudal_agua_in'].max(), df_8h['opt_hibrida_agua_Lh'].max())
+            min_agua_view = min(df_8h['caudal_agua_in'].min(), df_8h['opt_hibrida_agua_Lh'].min())
+            ylim_agua = [min_agua_view - 5, max_agua_view + 5] # Margen solicitado
+        else:
+            # Fallback por si no hay datos en las ultimas 8h
+            ylim_soda = None
+            ylim_agua = None
+
+        # Función de ploteo Actualizada (Acepta xlim y ylim)
+        def plot_control(data, col_real, col_opt, title, color_real, color_opt, xlim=None, ylim=None):
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=data.index, y=data[col_real], mode='lines', name='Real',
@@ -176,19 +199,31 @@ if loaded and not df.empty:
                 x=data.index, y=data[col_opt], mode='lines', name='Modelo',
                 line=dict(color=color_opt, width=2, dash='dash')
             ))
+            
+            # Layout con rangos forzados
             fig.update_layout(
                 title=title, height=300, hovermode="x unified", template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=0, r=0, t=30, b=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                xaxis=dict(range=xlim), # Zoom temporal por defecto
+                yaxis=dict(range=ylim)  # Zoom vertical dinámico
             )
             return fig
 
         c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
+            st.plotly_chart(
+                plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", 
+                             C_SODA_REAL, C_SODA_OPT, xlim=[start_8h, end_8h], ylim=ylim_soda), 
+                use_container_width=True
+            )
         with c2:
-            st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
+            st.plotly_chart(
+                plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", 
+                             C_AGUA_REAL, C_AGUA_OPT, xlim=[start_8h, end_8h], ylim=ylim_agua), 
+                use_container_width=True
+            )
 
         st.markdown("##### 🌡️ Perturbaciones (Temperatura Entrada)")
         if 'temperatura_in' in df.columns:
@@ -197,14 +232,16 @@ if loaded and not df.empty:
                 x=df.index, y=df['temperatura_in'], mode='lines', name='Temp Entrada',
                 line=dict(color=C_TEMP, width=2)
             ))
+            # Aplicamos el mismo zoom temporal a la temperatura para mantener coherencia
             fig_temp.update_layout(
                 height=200, hovermode="x unified", template="plotly_dark", 
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=10, b=0)
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=10, b=0),
+                xaxis=dict(range=[start_8h, end_8h]) 
             )
             st.plotly_chart(fig_temp, use_container_width=True)
 
     # ==============================================================================
-    # TAB 2: DIAGNÓSTICO DE ERROR (NUEVO MAE Y BIAS)
+    # TAB 2: DIAGNÓSTICO DE ERROR
     # ==============================================================================
     with tab_error:
         col_sel1, col_sel2 = st.columns([1,3])
@@ -213,7 +250,6 @@ if loaded and not df.empty:
             var_analisis = st.radio("Variable a auditar:", ["Soda (NaOH)", "Agua"])
             col_err = 'err_soda' if var_analisis == "Soda (NaOH)" else 'err_agua'
             
-            # --- CÁLCULO DE MÉTRICAS (NUEVO) ---
             mae = df[col_err].abs().mean()
             bias = df[col_err].mean()
             
@@ -306,6 +342,3 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
-
-
-

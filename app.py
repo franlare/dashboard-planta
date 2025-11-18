@@ -126,7 +126,7 @@ if loaded and not df.empty:
     # --- HEADER CON LOGO ---
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
-        st.image("logo2,png", use_container_width=True)
+        st.image("logo2.png", use_container_width=True)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -367,3 +367,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

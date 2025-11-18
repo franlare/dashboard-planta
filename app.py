@@ -27,7 +27,8 @@ C_SODA_REAL = "#FF6B35"   # Naranja
 C_SODA_OPT = "#CC5500"    # Naranja Oscuro
 C_AGUA_REAL = "#00B4D8"   # Cyan
 C_AGUA_OPT = "#0077B6"    # Azul Oscuro
-C_TEMP = "#9D4EDD"        # Violeta
+C_TEMP = "#9D4EDD"        # Violeta (Temperatura)
+C_ACID_IN = "#F4D35E"     # Amarillo Industrial (Acidez Crudo)
 C_ERROR = "#E63946"       # Rojo Alerta
 C_COSTO_REAL = "#FF6B35"
 C_COSTO_OPT = "#2D7DD2"
@@ -62,14 +63,12 @@ st.markdown("""
         text-align: right;
         margin-bottom: 10px;
     }
-
-    /* REMOVER PADDING SUPERIOR */
+    
+    /* REMOVER PADDING SUPERIOR (Block Container) */
     .block-container {
-        padding-top: 0rem; /* Valor default es aprox 6rem. Bajalo a 1rem o 0rem */
-        padding-bottom: 1rem;
-        margin-top: 0px;
+        padding-top: 0rem;
+        padding-bottom: 0rem;
     }
-    header { visibility: hidden; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,10 +84,11 @@ def get_data():
         sh = gc.open("Resultados_Planta").worksheet("Resultados_Hibridos_RF")
         df = pd.DataFrame(sh.get_all_records())
 
+        # AGREGADO: 'ffa_pct_in' a la lista
         cols_num = [
             'caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
             'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 
-            'sim_merma_TEORICA_L', 'temperatura_in'
+            'sim_merma_TEORICA_L', 'temperatura_in', 'ffa_pct_in'
         ]
         
         for c in cols_num:
@@ -126,8 +126,7 @@ if loaded and not df.empty:
     # --- HEADER CON LOGO ---
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
-        # Imagen con use_container_width para que se adapte y no se vea minúscula
-        st.image("logo2.png", use_container_width=True)
+        st.image("logo2,png", use_container_width=True)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -156,10 +155,9 @@ if loaded and not df.empty:
     ])
 
     # ==============================================================================
-    # TAB 1: SALA DE CONTROL (MEJORADO: 8H DEFAULT + ZOOM Y)
+    # TAB 1: SALA DE CONTROL (CON ACIDEZ CRUDO + TEMP)
     # ==============================================================================
     with tab_control:
-        # Definir zona horaria
         tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
         hora_ar = datetime.now(tz_ar).strftime('%H:%M:%S')
 
@@ -171,31 +169,38 @@ if loaded and not df.empty:
             </div>
         """, unsafe_allow_html=True)
         
-        # --- CÁLCULO DE LÍMITES DE VISUALIZACIÓN (Lógica de Zoom Inteligente) ---
+        # --- CÁLCULO DE LÍMITES Y ZOOM ---
         end_8h = df.index.max()
         start_8h = end_8h - pd.Timedelta(hours=8)
-        
-        # Filtramos un df temporal solo para calcular los minimos y maximos de esas 8 horas
-        # Esto asegura que el eje Y se ajuste al contenido visible, no al histórico de hace 3 meses.
         df_8h = df[df.index >= start_8h]
         
-        # Limites Soda (+- 1 L/h)
-        if not df_8h.empty:
-            # Maximos y minimos considerando tanto Real como Modelo para que nada quede afuera
-            max_soda_view = max(df_8h['caudal_naoh_in'].max(), df_8h['opt_hibrida_naoh_Lh'].max())
-            min_soda_view = min(df_8h['caudal_naoh_in'].min(), df_8h['opt_hibrida_naoh_Lh'].min())
-            ylim_soda = [min_soda_view - 1, max_soda_view + 1] # Margen solicitado
-            
-            # Limites Agua (+- 5 L/h)
-            max_agua_view = max(df_8h['caudal_agua_in'].max(), df_8h['opt_hibrida_agua_Lh'].max())
-            min_agua_view = min(df_8h['caudal_agua_in'].min(), df_8h['opt_hibrida_agua_Lh'].min())
-            ylim_agua = [min_agua_view - 5, max_agua_view + 5] # Margen solicitado
-        else:
-            # Fallback por si no hay datos en las ultimas 8h
-            ylim_soda = None
-            ylim_agua = None
+        # Inicializar límites en None
+        ylim_soda, ylim_agua, ylim_acid, ylim_temp = None, None, None, None
 
-        # Función de ploteo Actualizada (Acepta xlim y ylim)
+        if not df_8h.empty:
+            # Soda (+- 1 L/h)
+            max_soda = max(df_8h['caudal_naoh_in'].max(), df_8h['opt_hibrida_naoh_Lh'].max())
+            min_soda = min(df_8h['caudal_naoh_in'].min(), df_8h['opt_hibrida_naoh_Lh'].min())
+            ylim_soda = [min_soda - 1, max_soda + 1]
+            
+            # Agua (+- 5 L/h)
+            max_agua = max(df_8h['caudal_agua_in'].max(), df_8h['opt_hibrida_agua_Lh'].max())
+            min_agua = min(df_8h['caudal_agua_in'].min(), df_8h['opt_hibrida_agua_Lh'].min())
+            ylim_agua = [min_agua - 5, max_agua + 5]
+
+            # Acidez Crudo (+- 0.05 %)
+            if 'ffa_pct_in' in df_8h.columns:
+                max_acid = df_8h['ffa_pct_in'].max()
+                min_acid = df_8h['ffa_pct_in'].min()
+                ylim_acid = [min_acid - 0.05, max_acid + 0.05]
+
+            # Temperatura (+- 2 °C)
+            if 'temperatura_in' in df_8h.columns:
+                max_temp = df_8h['temperatura_in'].max()
+                min_temp = df_8h['temperatura_in'].min()
+                ylim_temp = [min_temp - 2, max_temp + 2]
+
+        # --- FUNCIÓN DE PLOTEO (DOS VARIABLES) ---
         def plot_control(data, col_real, col_opt, title, color_real, color_opt, xlim=None, ylim=None):
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -203,50 +208,62 @@ if loaded and not df.empty:
                 line=dict(color=color_real, width=3),
                 fill='tozeroy', fillcolor=f"rgba{tuple(int(color_real.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}"
             ))
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data[col_opt], mode='lines', name='Modelo',
-                line=dict(color=color_opt, width=2, dash='dash')
-            ))
+            if col_opt: # Solo si hay modelo
+                fig.add_trace(go.Scatter(
+                    x=data.index, y=data[col_opt], mode='lines', name='Modelo',
+                    line=dict(color=color_opt, width=2, dash='dash')
+                ))
             
-            # Layout con rangos forzados
             fig.update_layout(
-                title=title, height=300, hovermode="x unified", template="plotly_dark",
+                title=title, height=280, hovermode="x unified", template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=0, r=0, t=30, b=0),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(range=xlim), # Zoom temporal por defecto
-                yaxis=dict(range=ylim)  # Zoom vertical dinámico
+                xaxis=dict(range=xlim), 
+                yaxis=dict(range=ylim)
             )
             return fig
 
+        # --- FUNCIÓN DE PLOTEO (SINGLE VARIABLE - INPUTS) ---
+        # Usamos una función similar para mantener la consistencia visual (filled area)
+        def plot_input(data, col_val, title, color_val, xlim=None, ylim=None):
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=data.index, y=data[col_val], mode='lines', name='Valor Real',
+                line=dict(color=color_val, width=2),
+                fill='tozeroy', fillcolor=f"rgba{tuple(int(color_val.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}"
+            ))
+            fig.update_layout(
+                title=title, height=250, hovermode="x unified", template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(range=xlim), 
+                yaxis=dict(range=ylim)
+            )
+            return fig
+
+        # FILA 1: VARIABLES DE CONTROL
         c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(
-                plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", 
-                             C_SODA_REAL, C_SODA_OPT, xlim=[start_8h, end_8h], ylim=ylim_soda), 
-                use_container_width=True
-            )
+            st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT, xlim=[start_8h, end_8h], ylim=ylim_soda), use_container_width=True)
         with c2:
-            st.plotly_chart(
-                plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", 
-                             C_AGUA_REAL, C_AGUA_OPT, xlim=[start_8h, end_8h], ylim=ylim_agua), 
-                use_container_width=True
-            )
+            st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT, xlim=[start_8h, end_8h], ylim=ylim_agua), use_container_width=True)
 
-        st.markdown("##### 🌡️ Perturbaciones (Temperatura Entrada)")
-        if 'temperatura_in' in df.columns:
-            fig_temp = go.Figure()
-            fig_temp.add_trace(go.Scatter(
-                x=df.index, y=df['temperatura_in'], mode='lines', name='Temp Entrada',
-                line=dict(color=C_TEMP, width=2)
-            ))
-            # Aplicamos el mismo zoom temporal a la temperatura para mantener coherencia
-            fig_temp.update_layout(
-                height=200, hovermode="x unified", template="plotly_dark", 
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=10, b=0),
-                xaxis=dict(range=[start_8h, end_8h]) 
-            )
-            st.plotly_chart(fig_temp, use_container_width=True)
+        # FILA 2: VARIABLES DE ENTRADA (PERTURBACIONES)
+        st.markdown("##### 🔎 Variables de Entrada (Perturbaciones)")
+        c3, c4 = st.columns(2)
+        
+        with c3:
+            if 'ffa_pct_in' in df.columns:
+                st.plotly_chart(plot_input(df, 'ffa_pct_in', "🛢️ Acidez de Crudo (%FFA)", C_ACID_IN, xlim=[start_8h, end_8h], ylim=ylim_acid), use_container_width=True)
+            else:
+                st.warning("Columna 'ffa_pct_in' no encontrada.")
+        
+        with c4:
+            if 'temperatura_in' in df.columns:
+                st.plotly_chart(plot_input(df, 'temperatura_in', "🌡️ Temperatura de Entrada (°C)", C_TEMP, xlim=[start_8h, end_8h], ylim=ylim_temp), use_container_width=True)
+            else:
+                st.warning("Columna 'temperatura_in' no encontrada.")
 
     # ==============================================================================
     # TAB 2: DIAGNÓSTICO DE ERROR
@@ -350,6 +367,3 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
-
-
-

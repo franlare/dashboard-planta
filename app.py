@@ -119,7 +119,7 @@ if loaded and not df.empty:
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
         # Puedes cambiar esta URL por la ruta local de tu imagen: st.image("logo.png")
-        st.image("image_60c7ed.png", width=130 , height=160)
+        st.image("image_60c7ed.png", use_container_width=True)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -306,5 +306,6 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+
 
 

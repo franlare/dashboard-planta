@@ -65,7 +65,7 @@ st.markdown("""
 
     /* REMOVER PADDING SUPERIOR */
     .block-container {
-        padding-top: 1rem; /* Valor default es aprox 6rem. Bajalo a 1rem o 0rem */
+        padding-top: 0rem; /* Valor default es aprox 6rem. Bajalo a 1rem o 0rem */
         padding-bottom: 1rem;
         margin-top: 0px;
     }
@@ -349,4 +349,5 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+
 

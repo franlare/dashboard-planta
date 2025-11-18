@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 import pandas as pd
 import numpy as np
+import pytz
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -118,7 +119,7 @@ if loaded and not df.empty:
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
         # Puedes cambiar esta URL por la ruta local de tu imagen: st.image("logo.png")
-        st.image("https://cdn-icons-png.flaticon.com/512/2893/2893447.png", width=80)
+        st.image("image_60c7ed.png", width=80)
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -151,6 +152,10 @@ if loaded and not df.empty:
     # ==============================================================================
     with tab_control:
         # --- LEYENDA INFORMATIVA (NUEVO) ---
+        # Definir zona horaria
+        tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
+        hora_ar = datetime.now(tz_ar).strftime('%H:%M:%S')
+        
         st.markdown(f"""
             <div class="info-bar">
                 ⏱️ Última Act: {datetime.now().strftime('%H:%M:%S')} | 
@@ -301,3 +306,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

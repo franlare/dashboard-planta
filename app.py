@@ -261,7 +261,7 @@ if loaded and not df.empty:
         
         with c4:
             if 'temperatura_in' in df.columns:
-                st.plotly_chart(plot_input(df, 'temperatura_in', "🌡️ Temperatura de Entrada (°C)", C_TEMP, xlim=[start_8h, end_8h], ylim=ylim_temp), use_container_width=True)
+                st.plotly_chart(plot_input(df, 'temperatura_in', "🌡️ Temperatura de MD2 (°C)", C_TEMP, xlim=[start_8h, end_8h], ylim=ylim_temp), use_container_width=True)
             else:
                 st.warning("Columna 'temperatura_in' no encontrada.")
 
@@ -367,4 +367,5 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+
 

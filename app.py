@@ -19,8 +19,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- AUTO-REFRESH (Cada 60 seg) ---
-count = st_autorefresh(interval=60000, limit=None, key="fizzbuzzcounter")
+# --- AUTO-REFRESH (Cada 20 min) ---
+count = st_autorefresh(interval=1200000, limit=None, key="fizzbuzzcounter")
 
 # --- PALETA DE COLORES ---
 C_SODA_REAL = "#FF6B35"   # Naranja
@@ -367,3 +367,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

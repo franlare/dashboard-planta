@@ -107,11 +107,11 @@ def get_data():
         # Esto busca el timestamp más cercano dentro de una tolerancia de 2 minutos.
         # Si el RTO es 12:00:00 y el sensor de agua midió 12:00:05, ahora los une (antes fallaba).
         
-        cols_input = ['Timestamp', 'Caudal_agua_L_h', 'Temperatura_C']
+        cols_input = ['Timestamp', 'Caudal_Agua_L_h', 'Temperatura_C']
         # Validar que existan
         cols_available = [c for c in cols_input if c in df_inputs.columns]
         
-        if 'Caudal_agua_L_h' in df_inputs.columns:
+        if 'Caudal_Agua_L_h' in df_inputs.columns:
             df = pd.merge_asof(
                 df_rto, 
                 df_inputs[cols_available], 
@@ -120,7 +120,7 @@ def get_data():
                 tolerance=pd.Timedelta('5min')
             )
         else:
-            st.error("⚠️ Columna 'Caudal_agua_L_h' no encontrada en Inputs.")
+            st.error("⚠️ Columna 'Caudal_Agua_L_h' no encontrada en Inputs.")
             df = df_rto
 
         # --- 5. MAPEO DE VARIABLES ---
@@ -132,7 +132,7 @@ def get_data():
             "FFA_In": "ffa_pct_in",
             
             # Traídos del Merge
-            "Caudal_agua_L_h": "caudal_agua_in",
+            "Caudal_Agua_L_h": "caudal_agua_in",
             "Temperatura_C": "temperatura_in",
             
             "Acidez_Real_Est": "sim_acidez_HIBRIDA",
@@ -405,3 +405,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

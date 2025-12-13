@@ -111,7 +111,7 @@ def get_data():
 
         # --- 4. MERGE INTELIGENTE ---
         # Usamos 'time_key' para unir, pero mantenemos el Timestamp original del RTO
-        if 'Caudal_agua_L_h' in df_inputs.columns:
+        if 'Caudal_Agua_L_h' in df_inputs.columns:
             # Traemos solo la llave de tiempo y el dato que nos falta
             df = pd.merge(df_rto, df_inputs[['time_key', 'Caudal_agua_L_h']], on='time_key', how='left')
         else:
@@ -371,4 +371,5 @@ if loaded and not df.empty:
 
 else:
     st.info("Esperando conexión con base de datos 'Resultados_Hibridos_RTO'...")
+
 

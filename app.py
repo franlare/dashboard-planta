@@ -72,7 +72,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. CARGA DE DATOS (FIX: MERGE ASOF PARA AGUA)
+# 2. CARGA DE DATOS
 # -------------------------------------------------------------------
 @st.cache_data(ttl=30) 
 def get_data():
@@ -83,11 +83,9 @@ def get_data():
         wb = gc.open("Resultados_Planta")
         
         # --- 1. LEER HOJAS ---
-        # Hoja RTO (Modelo)
         sh_rto = wb.worksheet("Resultados_Hibridos_RTO")
         df_rto = pd.DataFrame(sh_rto.get_all_records())
         
-        # Hoja Inputs (Agua Real y Temp)
         sh_inputs = wb.worksheet("Inputs_Historicos_Analytics")
         df_inputs = pd.DataFrame(sh_inputs.get_all_records())
 
@@ -95,23 +93,19 @@ def get_data():
         df_rto.columns = df_rto.columns.str.strip()
         df_inputs.columns = df_inputs.columns.str.strip()
 
-        # --- 3. PREPARACIÓN DE TIEMPO (CRÍTICO) ---
+        # --- 3. PREPARACIÓN DE TIEMPO ---
         df_rto['Timestamp'] = pd.to_datetime(df_rto['Timestamp'])
         df_inputs['Timestamp'] = pd.to_datetime(df_inputs['Timestamp'])
 
-        # Ordenar es OBLIGATORIO para merge_asof
+        # Ordenar para merge_asof
         df_rto = df_rto.sort_values('Timestamp')
         df_inputs = df_inputs.sort_values('Timestamp')
 
         # --- 4. UNIÓN INTELIGENTE (MERGE_ASOF) ---
-        # Esto busca el timestamp más cercano dentro de una tolerancia de 2 minutos.
-        # Si el RTO es 12:00:00 y el sensor de agua midió 12:00:05, ahora los une (antes fallaba).
-        
-        cols_input = ['Timestamp', 'Caudal_Agua_L_h', 'Temperatura_C']
-        # Validar que existan
+        cols_input = ['Timestamp', 'Caudal_agua_L_h', 'Temperatura_C']
         cols_available = [c for c in cols_input if c in df_inputs.columns]
         
-        if 'Caudal_Agua_L_h' in df_inputs.columns:
+        if 'Caudal_agua_L_h' in df_inputs.columns:
             df = pd.merge_asof(
                 df_rto, 
                 df_inputs[cols_available], 
@@ -120,7 +114,7 @@ def get_data():
                 tolerance=pd.Timedelta('5min')
             )
         else:
-            st.error("⚠️ Columna 'Caudal_Agua_L_h' no encontrada en Inputs.")
+            st.error("⚠️ Columna 'Caudal_agua_L_h' no encontrada en Inputs.")
             df = df_rto
 
         # --- 5. MAPEO DE VARIABLES ---
@@ -130,11 +124,8 @@ def get_data():
             "RTO_NaOH": "opt_hibrida_naoh_Lh",
             "RTO_Agua": "opt_hibrida_agua_Lh",
             "FFA_In": "ffa_pct_in",
-            
-            # Traídos del Merge
-            "Caudal_Agua_L_h": "caudal_agua_in",
+            "Caudal_agua_L_h": "caudal_agua_in",
             "Temperatura_C": "temperatura_in",
-            
             "Acidez_Real_Est": "sim_acidez_HIBRIDA",
             "Jabones_Real_Est": "sim_jabones_HIBRIDO",
             "Merma_Real_Est": "sim_merma_ML_TOTAL",
@@ -158,7 +149,7 @@ def get_data():
 
         df = df.set_index('timestamp').sort_index()
 
-        # Relleno hacia adelante (Si falta un dato de sensor, usa el del minuto anterior)
+        # Relleno hacia adelante (ffill) para visualización continua
         df['caudal_agua_in'] = df['caudal_agua_in'].ffill()
         df['temperatura_in'] = df['temperatura_in'].ffill()
 
@@ -193,14 +184,11 @@ if loaded and not df.empty:
         st.divider()
         cost_soda = st.number_input("Costo Soda ($/L)", 0.0, 100.0, 0.5, 0.1)
 
-    # --- HEADER CON LOGO RESTAURADO ---
+    # --- HEADER ---
     col_logo, col_title = st.columns([1, 7])
     with col_logo:
-        # Intenta cargar el logo, si falla muestra un emoji
-        try:
-            st.image("logo2.png", use_container_width=True)
-        except:
-            st.markdown("# 🏭")
+        try: st.image("logo2.png", use_container_width=True)
+        except: st.markdown("# 🏭")
             
     with col_title:
         st.title("Panel de Control de Proceso")
@@ -208,7 +196,7 @@ if loaded and not df.empty:
 
     last = df.iloc[-1]
 
-    # KPI HUD (CON EMOJIS RESTAURADOS)
+    # KPI HUD
     k1, k2, k3, k4 = st.columns(4)
     with k1: st.metric("Soda: REAL", f"{last.get('caudal_naoh_in',0):.1f} L/h", delta="Sensor")
     with k2: 
@@ -221,7 +209,7 @@ if loaded and not df.empty:
 
     st.markdown("---")
 
-    # --- TABS CON EMOJIS ---
+    # --- TABS ---
     tab_control, tab_error, tab_brain, tab_eco = st.tabs([
         "🎛️ Sala de Control", 
         "⚠️ Análisis de Error", 
@@ -247,9 +235,11 @@ if loaded and not df.empty:
         end_8h = df.index.max()
         start_8h = end_8h - pd.Timedelta(hours=8)
         
-        # Función de ploteo
+        # --- FUNCIÓN DE PLOTEO CON ZOOM INTELIGENTE ---
         def plot_control(data, col_real, col_opt, title, color_real, color_opt):
             fig = go.Figure()
+            
+            # 1. Agregar Trazos
             if col_real in data.columns and not data[col_real].isnull().all():
                 fig.add_trace(go.Scatter(
                     x=data.index, y=data[col_real], mode='lines', name='Real',
@@ -262,11 +252,35 @@ if loaded and not df.empty:
                     line=dict(color=color_opt, width=2, dash='dash')
                 ))
 
+            # 2. Calcular Rango Y Dinámico (Zoom a las últimas 8 horas)
+            # Filtramos los datos que se verán en pantalla
+            mask = (data.index >= start_8h) & (data.index <= end_8h)
+            df_view = data.loc[mask]
+            
+            y_min, y_max = None, None
+            
+            # Recopilar todos los valores visibles de Real y Modelo
+            vals = []
+            if col_real in df_view.columns: vals.extend(df_view[col_real].dropna().values)
+            if col_opt in df_view.columns: vals.extend(df_view[col_opt].dropna().values)
+            
+            if vals:
+                v_min, v_max = min(vals), max(vals)
+                diff = v_max - v_min
+                if diff == 0: diff = 1.0 # Evitar división por cero si es una línea plana
+                
+                # Dejamos un 10% de margen arriba y abajo para que no toque los bordes
+                padding = diff * 0.1 
+                y_min = v_min - padding
+                y_max = v_max + padding
+
+            # 3. Actualizar Layout con el nuevo rango Y
             fig.update_layout(
                 title=title, height=280, hovermode="x unified", template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=0, r=0, t=30, b=0),
-                xaxis=dict(range=[start_8h, end_8h])
+                xaxis=dict(range=[start_8h, end_8h]), # Rango X fijo (8h)
+                yaxis=dict(range=[y_min, y_max])      # Rango Y calculado (Zoom)
             )
             return fig
 
@@ -280,15 +294,36 @@ if loaded and not df.empty:
         c3, c4 = st.columns(2)
         with c3:
             if 'ffa_pct_in' in df.columns:
+                # También aplicamos zoom a los inputs para consistencia
+                mask_in = (df.index >= start_8h) & (df.index <= end_8h)
+                view_acid = df.loc[mask_in, 'ffa_pct_in']
+                
                 fig = px.line(df, y='ffa_pct_in', title="🛢️ Acidez de Crudo (%FFA)", color_discrete_sequence=[C_ACID_IN])
                 fig.update_traces(fill='tozeroy')
+                
+                # Ajuste manual del rango Y para Acidez
+                if not view_acid.empty:
+                    ymin, ymax = view_acid.min(), view_acid.max()
+                    pad = (ymax - ymin) * 0.1 if ymax != ymin else 0.05
+                    fig.update_layout(yaxis=dict(range=[ymin - pad, ymax + pad]))
+                
                 fig.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]))
                 st.plotly_chart(fig, use_container_width=True)
         
         with c4:
             if 'temperatura_in' in df.columns and not df['temperatura_in'].isnull().all():
+                mask_temp = (df.index >= start_8h) & (df.index <= end_8h)
+                view_temp = df.loc[mask_temp, 'temperatura_in']
+
                 fig = px.line(df, y='temperatura_in', title="🌡️ Temperatura MD2 (°C)", color_discrete_sequence=[C_TEMP])
                 fig.update_traces(fill='tozeroy')
+                
+                # Ajuste manual del rango Y para Temp
+                if not view_temp.empty:
+                    tmin, tmax = view_temp.min(), view_temp.max()
+                    pad = (tmax - tmin) * 0.1 if tmax != tmin else 1.0
+                    fig.update_layout(yaxis=dict(range=[tmin - pad, tmax + pad]))
+
                 fig.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]))
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -304,7 +339,6 @@ if loaded and not df.empty:
             var_analisis = st.radio("Variable a auditar:", ["Soda (NaOH)", "Agua"])
             col_err = 'err_soda' if var_analisis == "Soda (NaOH)" else 'err_agua'
             
-            # Cálculo seguro de métricas
             if col_err in df.columns and not df[col_err].isnull().all():
                 mae = df[col_err].abs().mean()
                 bias = df[col_err].mean()
@@ -405,4 +439,3 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
-

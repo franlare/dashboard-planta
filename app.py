@@ -130,7 +130,7 @@ def get_data():
         df_inputs = df_inputs.sort_values('Timestamp')
 
         # --- 3. MERGE INTELIGENTE (ASOF) ---
-        cols_input_wanted = ['Timestamp', 'Caudal_agua_L_h', 'Temperatura_C', 'MERMA_REAL_SCADA_waste']
+        cols_input_wanted = ['Timestamp', 'Caudal_Agua_L_h', 'Temperatura_C', 'MERMA_REAL_SCADA_waste']
         cols_available = [c for c in cols_input_wanted if c in df_inputs.columns]
         
         if len(cols_available) > 1:
@@ -146,7 +146,7 @@ def get_data():
             "RTO_NaOH": "opt_hibrida_naoh_Lh",
             "RTO_Agua": "opt_hibrida_agua_Lh",
             "FFA_In": "ffa_pct_in",
-            "Caudal_agua_L_h": "caudal_agua_in",
+            "Caudal_Agua_L_h": "caudal_agua_in",
             "Temperatura_C": "temperatura_in",
             "MERMA_REAL_SCADA_waste": "merma_scada_real",
             "Acidez_Real_Est": "sim_acidez_HIBRIDA",
@@ -402,3 +402,4 @@ if loaded and not df.empty:
             st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Conectando con base de datos...")
+

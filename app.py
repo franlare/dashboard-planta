@@ -155,6 +155,33 @@ def get_data():
 
 df, loaded = get_data()
 
+def plot_gauge(current_val, target_val, title, color_bar, min_v, max_v, suffix=" L/h"):
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number+delta",
+        value = current_val,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': title, 'font': {'size': 18, 'color': "white"}},
+        delta = {'reference': target_val, 'increasing': {'color': "red"}, 'decreasing': {'color': "#2ecc71"}}, # Verde si baja consumo
+        number = {'suffix': suffix, 'font': {'color': "white"}},
+        gauge = {
+            'axis': {'range': [min_v, max_v], 'tickwidth': 1, 'tickcolor': "white"},
+            'bar': {'color': color_bar},
+            'bgcolor': "rgba(0,0,0,0)",
+            'borderwidth': 2,
+            'bordercolor': "#333",
+            'steps': [
+                {'range': [min_v, target_val], 'color': 'rgba(255, 255, 255, 0.1)'} # Rango hasta el target sombreado leve
+            ],
+            'threshold': {
+                'line': {'color': "white", 'width': 4},
+                'thickness': 0.75,
+                'value': target_val # La marca del modelo
+            }
+        }
+    ))
+    fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+    return fig
+
 # -------------------------------------------------------------------
 # 3. UI PRINCIPAL
 # -------------------------------------------------------------------
@@ -203,8 +230,8 @@ if loaded and not df.empty:
         "📉 Costos"
     ])
 
-    # ==============================================================================
-    # TAB 1: SALA DE CONTROL (GRÁFICOS CONTROL + HEATMAP)
+# ==============================================================================
+    # TAB 1: SALA DE CONTROL (MODIFICADO: GAUGES EN LUGAR DE HEATMAP)
     # ==============================================================================
     with tab_control:
         tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
@@ -213,7 +240,51 @@ if loaded and not df.empty:
         end_8h = df.index.max()
         start_8h = end_8h - pd.Timedelta(hours=8)
         
-        # --- GRÁFICOS DE CONTROL (CON ZOOM) ---
+        # --- FILA 1: MEDIDORES TIPO "GAUGE" (NUEVO) ---
+        st.markdown("##### 🎛️ Indicadores de Proceso Instantáneos")
+        
+        g1, g2, g3 = st.columns(3)
+        
+        # Obtenemos últimos valores y promedios para definir rangos del reloj
+        last_row = df.iloc[-1]
+        
+        # GAUGE 1: SODA
+        val_soda = last_row.get('caudal_naoh_in', 0)
+        tgt_soda = last_row.get('opt_hibrida_naoh_Lh', 0)
+        # Definir min/max dinámicos para que la aguja se vea bien
+        max_g_soda = max(val_soda, tgt_soda) * 1.3 
+        min_g_soda = max(val_soda, tgt_soda) * 0.7
+        
+        with g1:
+            st.plotly_chart(plot_gauge(
+                val_soda, tgt_soda, "Caudal Soda", C_SODA_REAL, min_g_soda, max_g_soda
+            ), use_container_width=True)
+
+        # GAUGE 2: AGUA
+        val_agua = last_row.get('caudal_agua_in', 0)
+        tgt_agua = last_row.get('opt_hibrida_agua_Lh', 0)
+        max_g_agua = max(val_agua, tgt_agua) * 1.3
+        min_g_agua = max(val_agua, tgt_agua) * 0.7
+
+        with g2:
+            st.plotly_chart(plot_gauge(
+                val_agua, tgt_agua, "Caudal Agua", C_AGUA_REAL, min_g_agua, max_g_agua
+            ), use_container_width=True)
+
+        # GAUGE 3: JABONES (CALIDAD/IMPUREZA)
+        val_jabon = last_row.get('sim_jabones_HIBRIDO', 0)
+        # Aquí el "target" podría ser un límite fijo, ej: 150 ppm (invento valor)
+        tgt_jabon = 140 
+        
+        with g3:
+            st.plotly_chart(plot_gauge(
+                val_jabon, tgt_jabon, "Jabones (Sim)", "#E76F51", val_jabon*0.5, val_jabon*1.5, suffix=" ppm"
+            ), use_container_width=True)
+
+        st.divider()
+
+        # --- FILA 2: GRÁFICOS DE TENDENCIA (LO QUE YA TENÍAS) ---
+        # Función de ploteo (Mantenemos la lógica de Zoom que hicimos antes)
         def plot_control(data, col_real, col_opt, title, color_real, color_opt):
             fig = go.Figure()
             if col_real in data.columns:
@@ -221,7 +292,6 @@ if loaded and not df.empty:
             if col_opt in data.columns:
                 fig.add_trace(go.Scatter(x=data.index, y=data[col_opt], mode='lines', name='Modelo', line=dict(color=color_opt, width=2, dash='dash')))
             
-            # Zoom Logic
             mask = (data.index >= start_8h) & (data.index <= end_8h)
             vals = []
             if col_real in data.columns: vals.extend(data.loc[mask, col_real].dropna().values)
@@ -232,30 +302,12 @@ if loaded and not df.empty:
                 pad = (v_max - v_min) * 0.1 if v_max != v_min else 1.0
                 y_range = [v_min - pad, v_max + pad]
 
-            fig.update_layout(title=title, height=280, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(range=[start_8h, end_8h]), yaxis=dict(range=y_range))
+            fig.update_layout(title=title, height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(range=[start_8h, end_8h]), yaxis=dict(range=y_range))
             return fig
 
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
-        with c2: st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
-
-        # --- NUEVO: HEATMAP OPERATIVO ---
-        st.markdown("##### 🌡️ Mapa de Calor Operativo (Últimas 4 horas)")
-        
-        # Seleccionamos variables clave para el heatmap
-        cols_heat = ['caudal_naoh_in', 'caudal_agua_in', 'temperatura_in', 'sim_jabones_HIBRIDO', 'err_soda']
-        # Filtramos columnas que realmente existen
-        cols_heat_ok = [c for c in cols_heat if c in df.columns]
-        
-        if cols_heat_ok:
-            df_heat = df[cols_heat_ok].tail(240).copy() # Ultimas 4 horas (aprox)
-            # Normalizamos (0-1) para que los colores sean comparables
-            df_norm = (df_heat - df_heat.min()) / (df_heat.max() - df_heat.min())
-            
-            fig_heat = px.imshow(df_norm.T, aspect='auto', color_continuous_scale='RdBu_r', labels=dict(x="Tiempo", y="Variable", color="Intensidad"), x=df_norm.index)
-            fig_heat.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0))
-            st.plotly_chart(fig_heat, use_container_width=True)
-
+        with c1: st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Tendencia Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
+        with c2: st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Tendencia Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
     # ==============================================================================
     # TAB 2: BALANCE DE MASA (SANKEY) - NUEVO
     # ==============================================================================
@@ -428,3 +480,4 @@ if loaded and not df.empty:
                 st.plotly_chart(fig_acid, use_container_width=True)
 else:
     st.info("Conectando con base de datos...")
+

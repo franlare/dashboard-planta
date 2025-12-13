@@ -73,9 +73,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. CARGA DE DATOS (FUSIÓN DE DOS HOJAS)
+# 2. CARGA DE DATOS (CON REDONDEO DE TIEMPO PARA UNIÓN PERFECTA)
 # -------------------------------------------------------------------
-@st.cache_data(ttl=60) 
+@st.cache_data(ttl=30)  # Bajamos el caché a 30 segs para pruebas
 def get_data():
     try:
         creds = st.secrets.get("google_credentials")
@@ -83,40 +83,44 @@ def get_data():
         gc = gspread.service_account_from_dict(creds)
         wb = gc.open("Resultados_Planta")
         
-        # --- PASO 1: LEER HOJA DE RESULTADOS (RTO) ---
+        # --- 1. LEER AMBAS HOJAS ---
+        # Hoja Nueva (RTO)
         sh_rto = wb.worksheet("Resultados_Hibridos_RTO")
         df_rto = pd.DataFrame(sh_rto.get_all_records())
         
-        # --- PASO 2: LEER HOJA DE INPUTS (Donde está el Agua Real) ---
+        # Hoja Inputs (Agua Real)
         sh_inputs = wb.worksheet("Inputs_Historicos_Analytics")
-        # Traemos todos los inputs, o podríamos optimizar trayendo solo columnas específicas
         df_inputs = pd.DataFrame(sh_inputs.get_all_records())
 
-        # --- PASO 3: LIMPIEZA DE NOMBRES DE COLUMNAS ---
-        # Quitamos espacios en blanco extra (ej: "Timestamp " -> "Timestamp")
+        # --- 2. LIMPIEZA DE COLUMNAS ---
         df_rto.columns = df_rto.columns.str.strip()
         df_inputs.columns = df_inputs.columns.str.strip()
 
-        # --- PASO 4: FORMATEAR TIMESTAMP PARA EL MERGE ---
-        # Es CRÍTICO que ambas columnas sean datetime para que coincidan
+        # --- 3. SINCRONIZACIÓN DE TIEMPO (CRÍTICO) ---
+        # Convertimos a datetime
         df_rto['Timestamp'] = pd.to_datetime(df_rto['Timestamp'])
         df_inputs['Timestamp'] = pd.to_datetime(df_inputs['Timestamp'])
 
-        # --- PASO 5: MERGE (UNIÓN DE TABLAS) ---
-        # Unimos usando 'Timestamp' como llave. 
-        # how='left' significa: "Quédate con todas las filas del RTO y pégales el agua si encuentras la hora exacta"
-        # Seleccionamos solo 'Timestamp' y 'Caudal_agua_L_h' del df_inputs para no duplicar todo
-        if 'Caudal_agua_L_h' in df_inputs.columns:
-            df = pd.merge(df_rto, df_inputs[['Timestamp', 'Caudal_agua_L_h']], on='Timestamp', how='left')
-        else:
-            st.warning("⚠️ No encontré 'Caudal_agua_L_h' en la hoja Inputs. Verifica el nombre.")
-            df = df_rto # Fallback si falla
+        # TRUCO: Redondeamos al minuto más cercano (o 'floor' para ir hacia abajo)
+        # Esto hace que 19:02:05 coincida con 19:02:01
+        df_rto['time_key'] = df_rto['Timestamp'].dt.floor('min')
+        df_inputs['time_key'] = df_inputs['Timestamp'].dt.floor('min')
 
-        # --- PASO 6: MAPEO DE VARIABLES (DICCIONARIO ACTUALIZADO) ---
+        # Eliminar duplicados en inputs por si acaso hay varios registros en el mismo minuto
+        df_inputs = df_inputs.drop_duplicates(subset=['time_key'])
+
+        # --- 4. MERGE INTELIGENTE ---
+        # Usamos 'time_key' para unir, pero mantenemos el Timestamp original del RTO
+        if 'Caudal_agua_L_h' in df_inputs.columns:
+            # Traemos solo la llave de tiempo y el dato que nos falta
+            df = pd.merge(df_rto, df_inputs[['time_key', 'Caudal_agua_L_h']], on='time_key', how='left')
+        else:
+            st.warning("⚠️ No se encontró la columna 'Caudal_agua_L_h' en Inputs.")
+            df = df_rto
+
+        # --- 5. RENOMBRAR Y MAPEAR ---
         column_map = {
-            "Timestamp": "timestamp",
-            
-            # Datos del RTO (Hoja 1)
+            "Timestamp": "timestamp", # Usamos el original del RTO
             "NaOH_Actual": "caudal_naoh_in",
             "RTO_NaOH": "opt_hibrida_naoh_Lh",
             "RTO_Agua": "opt_hibrida_agua_Lh",
@@ -126,14 +130,12 @@ def get_data():
             "Jabones_Real_Est": "sim_jabones_HIBRIDO",
             "Merma_Real_Est": "sim_merma_ML_TOTAL",
             "Merma_FQ": "sim_merma_TEORICA_L",
-            
-            # Datos de Inputs (Hoja 2 - Agregado ahora)
-            "Caudal_agua_L_h": "caudal_agua_in" 
+            "Caudal_agua_L_h": "caudal_agua_in" # El dato traído de la otra hoja
         }
         
         df = df.rename(columns=column_map)
 
-        # --- PASO 7: CONVERSIÓN FINAL Y ORDENAMIENTO ---
+        # --- 6. CONVERTIR NÚMEROS ---
         cols_num = [
             'caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
             'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 
@@ -148,17 +150,20 @@ def get_data():
 
         df = df.set_index('timestamp').sort_index()
 
-        # Cálculo de errores (Ahora sí funcionará el de agua)
-        if 'caudal_naoh_in' in df.columns and 'opt_hibrida_naoh_Lh' in df.columns:
+        # Calcular errores
+        if {'caudal_naoh_in', 'opt_hibrida_naoh_Lh'}.issubset(df.columns):
             df['err_soda'] = df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']
         
-        if 'caudal_agua_in' in df.columns and 'opt_hibrida_agua_Lh' in df.columns:
+        if {'caudal_agua_in', 'opt_hibrida_agua_Lh'}.issubset(df.columns):
             df['err_agua'] = df['caudal_agua_in'] - df['opt_hibrida_agua_Lh']
+
+        # DEBUG: Si estás probando, descomenta la siguiente línea para ver en pantalla qué columnas llegaron
+        # st.write("Columnas cargadas:", df.columns.tolist())
 
         return df.dropna(subset=['opt_hibrida_naoh_Lh']), True 
 
     except Exception as e:
-        st.error(f"Error cargando o uniendo datos: {e}")
+        st.error(f"Error crítico en carga de datos: {e}")
         return pd.DataFrame(), False
 
 df, loaded = get_data()
@@ -366,3 +371,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Esperando conexión con base de datos 'Resultados_Hibridos_RTO'...")
+

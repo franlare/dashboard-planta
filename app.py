@@ -113,9 +113,9 @@ def get_data():
         # Usamos 'time_key' para unir, pero mantenemos el Timestamp original del RTO
         if 'Caudal_Agua_L_h' in df_inputs.columns:
             # Traemos solo la llave de tiempo y el dato que nos falta
-            df = pd.merge(df_rto, df_inputs[['time_key', 'Caudal_agua_L_h']], on='time_key', how='left')
+            df = pd.merge(df_rto, df_inputs[['time_key', 'Caudal_Agua_L_h']], on='time_key', how='left')
         else:
-            st.warning("⚠️ No se encontró la columna 'Caudal_agua_L_h' en Inputs.")
+            st.warning("⚠️ No se encontró la columna 'Caudal_Agua_L_h' en Inputs.")
             df = df_rto
 
         # --- 5. RENOMBRAR Y MAPEAR ---
@@ -130,7 +130,7 @@ def get_data():
             "Jabones_Real_Est": "sim_jabones_HIBRIDO",
             "Merma_Real_Est": "sim_merma_ML_TOTAL",
             "Merma_FQ": "sim_merma_TEORICA_L",
-            "Caudal_agua_L_h": "caudal_agua_in" # El dato traído de la otra hoja
+            "Caudal_Agua_L_h": "caudal_agua_in" # El dato traído de la otra hoja
         }
         
         df = df.rename(columns=column_map)
@@ -371,5 +371,6 @@ if loaded and not df.empty:
 
 else:
     st.info("Esperando conexión con base de datos 'Resultados_Hibridos_RTO'...")
+
 
 

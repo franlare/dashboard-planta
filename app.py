@@ -102,10 +102,10 @@ def get_data():
         df_inputs = df_inputs.sort_values('Timestamp')
 
         # --- 4. UNIÓN INTELIGENTE (MERGE_ASOF) ---
-        cols_input = ['Timestamp', 'Caudal_agua_L_h', 'Temperatura_C']
+        cols_input = ['Timestamp', 'Caudal_Agua_L_h', 'Temperatura_C']
         cols_available = [c for c in cols_input if c in df_inputs.columns]
         
-        if 'Caudal_agua_L_h' in df_inputs.columns:
+        if 'Caudal_Agua_L_h' in df_inputs.columns:
             df = pd.merge_asof(
                 df_rto, 
                 df_inputs[cols_available], 
@@ -114,7 +114,7 @@ def get_data():
                 tolerance=pd.Timedelta('5min')
             )
         else:
-            st.error("⚠️ Columna 'Caudal_agua_L_h' no encontrada en Inputs.")
+            st.error("⚠️ Columna 'Caudal_Agua_L_h' no encontrada en Inputs.")
             df = df_rto
 
         # --- 5. MAPEO DE VARIABLES ---
@@ -124,7 +124,7 @@ def get_data():
             "RTO_NaOH": "opt_hibrida_naoh_Lh",
             "RTO_Agua": "opt_hibrida_agua_Lh",
             "FFA_In": "ffa_pct_in",
-            "Caudal_agua_L_h": "caudal_agua_in",
+            "Caudal_Agua_L_h": "caudal_agua_in",
             "Temperatura_C": "temperatura_in",
             "Acidez_Real_Est": "sim_acidez_HIBRIDA",
             "Jabones_Real_Est": "sim_jabones_HIBRIDO",
@@ -439,3 +439,4 @@ if loaded and not df.empty:
 
 else:
     st.info("Conectando con base de datos...")
+

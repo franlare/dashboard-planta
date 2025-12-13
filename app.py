@@ -9,10 +9,10 @@ import pytz
 from datetime import datetime
 
 # -------------------------------------------------------------------
-# 1. CONFIGURACIÓN VISUAL
+# 1. CONFIGURACIÓN VISUAL (HONEYWELL FORGE STYLE)
 # -------------------------------------------------------------------
 st.set_page_config(
-    page_title="Panel de Control de Proceso",
+    page_title="Refinería RTO Dashboard",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -31,6 +31,8 @@ C_ACID_IN = "#F4D35E"     # Amarillo
 C_ERROR = "#E63946"       # Rojo Alerta
 C_COSTO_REAL = "#FF6B35"
 C_COSTO_OPT = "#2D7DD2"
+C_ACEITE = "#E9C46A"      # Color Aceite
+C_JABON = "#2A9D8F"       # Color Jabon
 
 st.markdown("""
     <style>
@@ -63,16 +65,12 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* REMOVER PADDING SUPERIOR */
-    .block-container {
-        padding-top: 0rem;
-        padding-bottom: 0rem;
-    }
+    .block-container { padding-top: 0rem; padding-bottom: 0rem; }
     </style>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
-# 2. CARGA DE DATOS
+# 2. CARGA DE DATOS (ACTUALIZADA CON ACEITE_IN)
 # -------------------------------------------------------------------
 @st.cache_data(ttl=30) 
 def get_data():
@@ -89,37 +87,27 @@ def get_data():
         sh_inputs = wb.worksheet("Inputs_Historicos_Analytics")
         df_inputs = pd.DataFrame(sh_inputs.get_all_records())
 
-        # --- 2. LIMPIEZA DE COLUMNAS ---
+        # --- 2. LIMPIEZA ---
         df_rto.columns = df_rto.columns.str.strip()
         df_inputs.columns = df_inputs.columns.str.strip()
-
-        # --- 3. PREPARACIÓN DE TIEMPO ---
         df_rto['Timestamp'] = pd.to_datetime(df_rto['Timestamp'])
         df_inputs['Timestamp'] = pd.to_datetime(df_inputs['Timestamp'])
-
-        # Ordenar para merge_asof
         df_rto = df_rto.sort_values('Timestamp')
         df_inputs = df_inputs.sort_values('Timestamp')
 
-        # --- 4. UNIÓN INTELIGENTE (MERGE_ASOF) ---
+        # --- 3. MERGE INTELIGENTE (ASOF) ---
         cols_input = ['Timestamp', 'Caudal_Agua_L_h', 'Temperatura_C']
         cols_available = [c for c in cols_input if c in df_inputs.columns]
         
         if 'Caudal_Agua_L_h' in df_inputs.columns:
-            df = pd.merge_asof(
-                df_rto, 
-                df_inputs[cols_available], 
-                on='Timestamp', 
-                direction='nearest', 
-                tolerance=pd.Timedelta('5min')
-            )
+            df = pd.merge_asof(df_rto, df_inputs[cols_available], on='Timestamp', direction='nearest', tolerance=pd.Timedelta('5min'))
         else:
-            st.error("⚠️ Columna 'Caudal_Agua_L_h' no encontrada en Inputs.")
             df = df_rto
 
-        # --- 5. MAPEO DE VARIABLES ---
+        # --- 4. MAPEO (AGREGADO ACEITE_IN PARA BALANCE DE MASA) ---
         column_map = {
             "Timestamp": "timestamp",
+            "Aceite_In": "caudal_aceite_in",   # <--- NUEVO: Para el Sankey
             "NaOH_Actual": "caudal_naoh_in",
             "RTO_NaOH": "opt_hibrida_naoh_Lh",
             "RTO_Agua": "opt_hibrida_agua_Lh",
@@ -134,26 +122,23 @@ def get_data():
         
         df = df.rename(columns=column_map)
 
-        # --- 6. CONVERSIÓN NUMÉRICA ---
+        # --- 5. CONVERSIONES ---
         cols_num = [
-            'caudal_naoh_in', 'caudal_agua_in', 'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
+            'caudal_aceite_in', 'caudal_naoh_in', 'caudal_agua_in', 
+            'opt_hibrida_naoh_Lh', 'opt_hibrida_agua_Lh',
             'sim_acidez_HIBRIDA', 'sim_jabones_HIBRIDO', 'sim_merma_ML_TOTAL', 
             'sim_merma_TEORICA_L', 'temperatura_in', 'ffa_pct_in'
         ]
 
         for c in cols_num:
-            if c in df.columns: 
-                df[c] = pd.to_numeric(df[c], errors='coerce')
-            else:
-                df[c] = np.nan 
+            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
+            else: df[c] = np.nan 
 
         df = df.set_index('timestamp').sort_index()
-
-        # Relleno hacia adelante (ffill) para visualización continua
         df['caudal_agua_in'] = df['caudal_agua_in'].ffill()
         df['temperatura_in'] = df['temperatura_in'].ffill()
 
-        # --- 7. CÁLCULO DE ERRORES ---
+        # Errores
         if 'caudal_naoh_in' in df.columns and 'opt_hibrida_naoh_Lh' in df.columns:
             df['err_soda'] = df['caudal_naoh_in'] - df['opt_hibrida_naoh_Lh']
         else: df['err_soda'] = np.nan
@@ -189,7 +174,6 @@ if loaded and not df.empty:
     with col_logo:
         try: st.image("logo2.png", use_container_width=True)
         except: st.markdown("# 🏭")
-            
     with col_title:
         st.title("Panel de Control de Proceso")
         st.caption("Monitorización en Tiempo Real - Planta Neural")
@@ -209,160 +193,174 @@ if loaded and not df.empty:
 
     st.markdown("---")
 
-    # --- TABS ---
-    tab_control, tab_error, tab_brain, tab_eco = st.tabs([
+    # --- TABS REORGANIZADOS ---
+    tab_control, tab_balance, tab_inputs, tab_error, tab_brain, tab_eco = st.tabs([
         "🎛️ Sala de Control", 
+        "⚖️ Balance de Masa",
+        "🏭 Inputs Planta",
         "⚠️ Análisis de Error", 
         "🧠 Inteligencia Artificial", 
-        "📉 Calidad & Costos"
+        "📉 Costos"
     ])
 
     # ==============================================================================
-    # TAB 1: SALA DE CONTROL
+    # TAB 1: SALA DE CONTROL (GRÁFICOS CONTROL + HEATMAP)
     # ==============================================================================
     with tab_control:
         tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
-        hora_ar = datetime.now(tz_ar).strftime('%H:%M:%S')
-
-        st.markdown(f"""
-            <div class="info-bar">
-                ⏱️ Última Act: {hora_ar} | 
-                📊 Muestras: {len(df)} | 
-                📡 Estado: ONLINE
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="info-bar">⏱️ Act: {datetime.now(tz_ar).strftime('%H:%M:%S')} | 📡 Estado: ONLINE</div>""", unsafe_allow_html=True)
 
         end_8h = df.index.max()
         start_8h = end_8h - pd.Timedelta(hours=8)
         
-        # --- FUNCIÓN DE PLOTEO CON ZOOM INTELIGENTE ---
+        # --- GRÁFICOS DE CONTROL (CON ZOOM) ---
         def plot_control(data, col_real, col_opt, title, color_real, color_opt):
             fig = go.Figure()
-            
-            # 1. Agregar Trazos
-            if col_real in data.columns and not data[col_real].isnull().all():
-                fig.add_trace(go.Scatter(
-                    x=data.index, y=data[col_real], mode='lines', name='Real',
-                    line=dict(color=color_real, width=3),
-                    fill='tozeroy', fillcolor=f"rgba{tuple(int(color_real.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}"
-                ))
+            if col_real in data.columns:
+                fig.add_trace(go.Scatter(x=data.index, y=data[col_real], mode='lines', name='Real', line=dict(color=color_real, width=3), fill='tozeroy', fillcolor=f"rgba{tuple(int(color_real.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}"))
             if col_opt in data.columns:
-                fig.add_trace(go.Scatter(
-                    x=data.index, y=data[col_opt], mode='lines', name='Modelo',
-                    line=dict(color=color_opt, width=2, dash='dash')
-                ))
-
-            # 2. Calcular Rango Y Dinámico (Zoom a las últimas 8 horas)
-            # Filtramos los datos que se verán en pantalla
+                fig.add_trace(go.Scatter(x=data.index, y=data[col_opt], mode='lines', name='Modelo', line=dict(color=color_opt, width=2, dash='dash')))
+            
+            # Zoom Logic
             mask = (data.index >= start_8h) & (data.index <= end_8h)
-            df_view = data.loc[mask]
-            
-            y_min, y_max = None, None
-            
-            # Recopilar todos los valores visibles de Real y Modelo
             vals = []
-            if col_real in df_view.columns: vals.extend(df_view[col_real].dropna().values)
-            if col_opt in df_view.columns: vals.extend(df_view[col_opt].dropna().values)
-            
+            if col_real in data.columns: vals.extend(data.loc[mask, col_real].dropna().values)
+            if col_opt in data.columns: vals.extend(data.loc[mask, col_opt].dropna().values)
+            y_range = None
             if vals:
                 v_min, v_max = min(vals), max(vals)
-                diff = v_max - v_min
-                if diff == 0: diff = 1.0 # Evitar división por cero si es una línea plana
-                
-                # Dejamos un 10% de margen arriba y abajo para que no toque los bordes
-                padding = diff * 0.1 
-                y_min = v_min - padding
-                y_max = v_max + padding
+                pad = (v_max - v_min) * 0.1 if v_max != v_min else 1.0
+                y_range = [v_min - pad, v_max + pad]
 
-            # 3. Actualizar Layout con el nuevo rango Y
-            fig.update_layout(
-                title=title, height=280, hovermode="x unified", template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=0, r=0, t=30, b=0),
-                xaxis=dict(range=[start_8h, end_8h]), # Rango X fijo (8h)
-                yaxis=dict(range=[y_min, y_max])      # Rango Y calculado (Zoom)
-            )
+            fig.update_layout(title=title, height=280, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(range=[start_8h, end_8h]), yaxis=dict(range=y_range))
             return fig
 
         c1, c2 = st.columns(2)
-        with c1:
-            st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
-        with c2:
-            st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
+        with c1: st.plotly_chart(plot_control(df, 'caudal_naoh_in', 'opt_hibrida_naoh_Lh', "🟠 Control de Soda", C_SODA_REAL, C_SODA_OPT), use_container_width=True)
+        with c2: st.plotly_chart(plot_control(df, 'caudal_agua_in', 'opt_hibrida_agua_Lh', "💧 Control de Agua", C_AGUA_REAL, C_AGUA_OPT), use_container_width=True)
 
-        st.markdown("##### 🔎 Variables de Entrada (Perturbaciones)")
-        c3, c4 = st.columns(2)
-        with c3:
+        # --- NUEVO: HEATMAP OPERATIVO ---
+        st.markdown("##### 🌡️ Mapa de Calor Operativo (Últimas 4 horas)")
+        
+        # Seleccionamos variables clave para el heatmap
+        cols_heat = ['caudal_naoh_in', 'caudal_agua_in', 'temperatura_in', 'sim_jabones_HIBRIDO', 'err_soda']
+        # Filtramos columnas que realmente existen
+        cols_heat_ok = [c for c in cols_heat if c in df.columns]
+        
+        if cols_heat_ok:
+            df_heat = df[cols_heat_ok].tail(240).copy() # Ultimas 4 horas (aprox)
+            # Normalizamos (0-1) para que los colores sean comparables
+            df_norm = (df_heat - df_heat.min()) / (df_heat.max() - df_heat.min())
+            
+            fig_heat = px.imshow(df_norm.T, aspect='auto', color_continuous_scale='RdBu_r', labels=dict(x="Tiempo", y="Variable", color="Intensidad"), x=df_norm.index)
+            fig_heat.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig_heat, use_container_width=True)
+
+    # ==============================================================================
+    # TAB 2: BALANCE DE MASA (SANKEY) - NUEVO
+    # ==============================================================================
+    with tab_balance:
+        st.markdown("### ⚖️ Diagrama de Flujo de Masa (Sankey)")
+        
+        # Tomamos el promedio de los últimos 15 minutos para estabilizar el gráfico
+        last_h = df.iloc[-15:] 
+        
+        if 'caudal_aceite_in' in last_h.columns and 'sim_merma_ML_TOTAL' in last_h.columns:
+            # Inputs
+            q_aceite = last_h['caudal_aceite_in'].mean()
+            q_soda = last_h['caudal_naoh_in'].mean()
+            q_agua = last_h['caudal_agua_in'].mean()
+            
+            # Outputs
+            q_merma = last_h['sim_merma_ML_TOTAL'].mean()
+            q_jabones = last_h['sim_jabones_HIBRIDO'].mean()
+            
+            # Balance: Neutro = Entradas - Salidas (Merma + Jabon)
+            q_total_in = q_aceite + q_soda + q_agua
+            q_neutro = q_total_in - q_merma - q_jabones
+            
+            # Definición Sankey
+            fig_sankey = go.Figure(data=[go.Sankey(
+                node = dict(
+                  pad = 15, thickness = 20,
+                  line = dict(color = "black", width = 0.5),
+                  label = [f"Aceite Crudo ({q_aceite:.0f})", "Soda", "Agua", 
+                           "MIXER / SEPARADORA", 
+                           f"Aceite Neutro ({q_neutro:.0f})", f"Jabones ({q_jabones:.0f})", f"Merma ({q_merma:.0f})"],
+                  color = [C_ACEITE, C_SODA_REAL, C_AGUA_REAL, "#264653", C_ACEITE, C_JABON, C_ERROR]
+                ),
+                link = dict(
+                  source = [0, 1, 2, 3, 3, 3], # Indices origen
+                  target = [3, 3, 3, 4, 5, 6], # Indices destino
+                  value =  [q_aceite, q_soda, q_agua, q_neutro, q_jabones, q_merma]
+              ))])
+
+            fig_sankey.update_layout(height=500, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', font_size=14)
+            st.plotly_chart(fig_sankey, use_container_width=True)
+            
+            st.info("💡 Este diagrama representa el balance de masa promedio de los últimos 15 minutos. Un grosor excesivo en la línea roja (Merma) indica ineficiencia.")
+        else:
+            st.warning("Faltan datos de 'Aceite_In' o 'Simulación Merma' para generar el Sankey.")
+
+    # ==============================================================================
+    # TAB 3: INPUTS PLANTA (GRAFICOS MOVIDOS) - NUEVO
+    # ==============================================================================
+    with tab_inputs:
+        st.markdown("### 🏭 Estado de Entradas (Planta)")
+        st.caption("Variables independientes que perturban el proceso.")
+        
+        col_in1, col_in2 = st.columns(2)
+        
+        with col_in1:
             if 'ffa_pct_in' in df.columns:
-                # También aplicamos zoom a los inputs para consistencia
-                mask_in = (df.index >= start_8h) & (df.index <= end_8h)
-                view_acid = df.loc[mask_in, 'ffa_pct_in']
+                # Zoom logic manual
+                vals_ac = df.loc[(df.index >= start_8h) & (df.index <= end_8h), 'ffa_pct_in']
+                yr = [vals_ac.min()*0.95, vals_ac.max()*1.05] if not vals_ac.empty else None
                 
                 fig = px.line(df, y='ffa_pct_in', title="🛢️ Acidez de Crudo (%FFA)", color_discrete_sequence=[C_ACID_IN])
                 fig.update_traces(fill='tozeroy')
-                
-                # Ajuste manual del rango Y para Acidez
-                if not view_acid.empty:
-                    ymin, ymax = view_acid.min(), view_acid.max()
-                    pad = (ymax - ymin) * 0.1 if ymax != ymin else 0.05
-                    fig.update_layout(yaxis=dict(range=[ymin - pad, ymax + pad]))
-                
-                fig.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]))
+                fig.update_layout(height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]), yaxis=dict(range=yr))
                 st.plotly_chart(fig, use_container_width=True)
+                
+                st.metric("Acidez Actual", f"{df['ffa_pct_in'].iloc[-1]:.3f} %", delta_color="off")
         
-        with c4:
-            if 'temperatura_in' in df.columns and not df['temperatura_in'].isnull().all():
-                mask_temp = (df.index >= start_8h) & (df.index <= end_8h)
-                view_temp = df.loc[mask_temp, 'temperatura_in']
-
+        with col_in2:
+            if 'temperatura_in' in df.columns:
+                vals_tm = df.loc[(df.index >= start_8h) & (df.index <= end_8h), 'temperatura_in']
+                yr_t = [vals_tm.min()-1, vals_tm.max()+1] if not vals_tm.empty else None
+                
                 fig = px.line(df, y='temperatura_in', title="🌡️ Temperatura MD2 (°C)", color_discrete_sequence=[C_TEMP])
                 fig.update_traces(fill='tozeroy')
-                
-                # Ajuste manual del rango Y para Temp
-                if not view_temp.empty:
-                    tmin, tmax = view_temp.min(), view_temp.max()
-                    pad = (tmax - tmin) * 0.1 if tmax != tmin else 1.0
-                    fig.update_layout(yaxis=dict(range=[tmin - pad, tmax + pad]))
-
-                fig.update_layout(height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]))
+                fig.update_layout(height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', xaxis=dict(range=[start_8h, end_8h]), yaxis=dict(range=yr_t))
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Datos de temperatura esperando sincronización...")
+                
+                st.metric("Temperatura Actual", f"{df['temperatura_in'].iloc[-1]:.1f} °C", delta_color="off")
+
+        st.markdown("---")
+        st.info("🚧 Espacio reservado para integración de diagrama CAD/P&ID de planta futura.")
 
     # ==============================================================================
-    # TAB 2: DIAGNÓSTICO DE ERROR
+    # TAB 4: DIAGNÓSTICO DE ERROR
     # ==============================================================================
     with tab_error:
         col_sel1, col_sel2 = st.columns([1,3])
         with col_sel1:
-            st.markdown("#### Configuración")
             var_analisis = st.radio("Variable a auditar:", ["Soda (NaOH)", "Agua"])
             col_err = 'err_soda' if var_analisis == "Soda (NaOH)" else 'err_agua'
             
-            if col_err in df.columns and not df[col_err].isnull().all():
+            if col_err in df.columns:
                 mae = df[col_err].abs().mean()
                 bias = df[col_err].mean()
                 st.divider()
                 st.metric("MAE (Error Abs)", f"{mae:.2f} L/h")
-                st.metric("BIAS (Sesgo)", f"{bias:.2f} L/h", 
-                        delta="Sesgo Positivo" if bias > 0 else "Sesgo Negativo",
-                        help="Positivo = Operador pone más que el modelo.")
-            else:
-                st.warning("Datos insuficientes.")
+                st.metric("BIAS (Sesgo)", f"{bias:.2f} L/h", delta="Sesgo Positivo" if bias > 0 else "Sesgo Negativo")
 
         with col_sel2:
-            st.markdown("#### 🕵️ Detección de Deriva (CUSUM)")
             if col_err in df.columns:
                 df['cusum_temp'] = df[col_err].fillna(0).cumsum()
                 fig_cusum = go.Figure()
-                fig_cusum.add_trace(go.Scatter(
-                    x=df.index, y=df['cusum_temp'], mode='lines', fill='tozeroy',
-                    name='Error Acumulado', line=dict(color='#E056FD')
-                ))
-                fig_cusum.update_layout(
-                    height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    yaxis_title="Lts Acumulados"
-                )
+                fig_cusum.add_trace(go.Scatter(x=df.index, y=df['cusum_temp'], mode='lines', fill='tozeroy', name='Error', line=dict(color='#E056FD')))
+                fig_cusum.update_layout(title="CUSUM - Deriva Acumulada", height=250, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_cusum, use_container_width=True)
 
         c_err1, c_err2 = st.columns(2)
@@ -381,42 +379,35 @@ if loaded and not df.empty:
                 st.plotly_chart(fig_hist, use_container_width=True)
 
     # ==============================================================================
-    # TAB 3: BRAIN (IA)
+    # TAB 5: BRAIN (IA)
     # ==============================================================================
     with tab_brain:
         c_b1, c_b2 = st.columns([1, 2])
         with c_b1:
             st.markdown("### Auditoría IA")
-            if 'caudal_naoh_in' in df.columns and 'opt_hibrida_naoh_Lh' in df.columns:
+            if {'caudal_naoh_in', 'opt_hibrida_naoh_Lh'}.issubset(df.columns):
                 corr = df['caudal_naoh_in'].corr(df['opt_hibrida_naoh_Lh'])
                 st.metric("Correlación Op-Modelo", f"{corr*100:.1f}%")
         
         with c_b2:
             if {'caudal_naoh_in', 'opt_hibrida_naoh_Lh', 'sim_acidez_HIBRIDA'}.issubset(df.columns):
-                fig_scat = px.scatter(
-                    df, x='caudal_naoh_in', y='opt_hibrida_naoh_Lh',
-                    color='sim_acidez_HIBRIDA', color_continuous_scale='Viridis',
-                    title="Dispersión: Operador (X) vs Modelo (Y)"
-                )
-                fig_scat.add_shape(type="line", x0=df['caudal_naoh_in'].min(), y0=df['caudal_naoh_in'].min(),
-                                x1=df['caudal_naoh_in'].max(), y1=df['caudal_naoh_in'].max(),
-                                line=dict(color="white", dash="dash"))
+                fig_scat = px.scatter(df, x='caudal_naoh_in', y='opt_hibrida_naoh_Lh', color='sim_acidez_HIBRIDA', color_continuous_scale='Viridis', title="Dispersión: Operador (X) vs Modelo (Y)")
+                fig_scat.add_shape(type="line", x0=df['caudal_naoh_in'].min(), y0=df['caudal_naoh_in'].min(), x1=df['caudal_naoh_in'].max(), y1=df['caudal_naoh_in'].max(), line=dict(color="white", dash="dash"))
                 fig_scat.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', height=400)
                 st.plotly_chart(fig_scat, use_container_width=True)
 
     # ==============================================================================
-    # TAB 4: ECONOMÍA
+    # TAB 6: ECONOMÍA
     # ==============================================================================
     with tab_eco:
         st.markdown("### 💰 Impacto Financiero Acumulado")
-        if 'caudal_naoh_in' in df.columns and 'opt_hibrida_naoh_Lh' in df.columns:
+        if {'caudal_naoh_in', 'opt_hibrida_naoh_Lh'}.issubset(df.columns):
             df['costo_real_acum'] = (df['caudal_naoh_in'] * cost_soda).cumsum()
             df['costo_opt_acum'] = (df['opt_hibrida_naoh_Lh'] * cost_soda).cumsum()
-
             fig_cost = go.Figure()
             fig_cost.add_trace(go.Scatter(x=df.index, y=df['costo_real_acum'], mode='lines', name='Real', line=dict(color=C_COSTO_REAL)))
             fig_cost.add_trace(go.Scatter(x=df.index, y=df['costo_opt_acum'], mode='lines', name='Modelo', line=dict(color=C_COSTO_OPT, dash='dash'), fill='tonexty', fillcolor='rgba(45, 125, 210, 0.1)'))
-            fig_cost.update_layout(height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig_cost.update_layout(height=300, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_cost, use_container_width=True)
 
         col_q1, col_q2 = st.columns(2)
@@ -425,8 +416,7 @@ if loaded and not df.empty:
             if 'sim_merma_TEORICA_L' in df.columns:
                 fig_merma = go.Figure()
                 fig_merma.add_trace(go.Box(y=df['sim_merma_TEORICA_L'], name="Teórica"))
-                if 'sim_merma_ML_TOTAL' in df.columns:
-                    fig_merma.add_trace(go.Box(y=df['sim_merma_ML_TOTAL'], name="Real (ML)"))
+                if 'sim_merma_ML_TOTAL' in df.columns: fig_merma.add_trace(go.Box(y=df['sim_merma_ML_TOTAL'], name="Real (ML)"))
                 fig_merma.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', height=300)
                 st.plotly_chart(fig_merma, use_container_width=True)
         with col_q2:
@@ -436,7 +426,5 @@ if loaded and not df.empty:
                 fig_acid.add_vline(x=0.045, line_color="red", line_dash="dash")
                 fig_acid.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', height=300)
                 st.plotly_chart(fig_acid, use_container_width=True)
-
 else:
     st.info("Conectando con base de datos...")
-
